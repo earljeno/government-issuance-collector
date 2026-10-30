@@ -7,6 +7,7 @@ from threading import Event
 from typing import Callable, List, Optional
 
 import requests
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from config import (
     DEFAULT_USER_AGENT,
@@ -156,6 +157,75 @@ class BaseScraper(ABC):
                 time.sleep(delay)
 
         return None
+
+    @staticmethod
+    def is_access_challenge(html: str) -> bool:
+        """Identify common access-challenge pages; do not attempt to solve them."""
+        sample = html[:50000].lower()
+        return any(marker in sample for marker in (
+            "just a moment...",
+            "cf-chl-",
+            "challenge-platform",
+            "verify you are human",
+            "attention required! | cloudflare",
+        ))
+
+    def fetch_rendered_html(self, url: str) -> Optional[str]:
+        """
+        Render a publicly accessible, JavaScript-dependent page with Chromium.
+
+        This is a rendering fallback, not an access-control bypass: it does not
+        spoof fingerprints, rotate proxies, reuse challenge tokens, or solve
+        CAPTCHAs. If a challenge page appears, it stops and returns None.
+        Call only after the ordinary HTTP request has returned status 200.
+        """
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                try:
+                    page = browser.new_page()
+                    response = page.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                    )
+                    if response is not None and response.status in (403, 429, 503):
+                        logger.warning(
+                            "[%s] Browser render received HTTP %s for %s; stopping.",
+                            self.department_code,
+                            response.status,
+                            url,
+                        )
+                        return None
+
+                    try:
+                        page.wait_for_load_state(
+                            "networkidle",
+                            timeout=min(5000, REQUEST_TIMEOUT_SECONDS * 1000),
+                        )
+                    except PlaywrightTimeoutError:
+                        # Some public pages keep analytics or long polling open.
+                        pass
+
+                    html = page.content()
+                    if self.is_access_challenge(html):
+                        logger.warning(
+                            "[%s] Browser render reached an access challenge at %s; "
+                            "no challenge-solving or bypass will be attempted.",
+                            self.department_code,
+                            url,
+                        )
+                        return None
+                    return html
+                finally:
+                    browser.close()
+        except Exception:
+            logger.exception(
+                "[%s] Playwright rendering failed for %s",
+                self.department_code,
+                url,
+            )
+            return None
 
     def save_records(self, records: List[IssuanceRecord]) -> tuple[int, int]:
         """Batch saves extracted records to the SQLite database."""
