@@ -1,0 +1,56 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments and packages
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & local configuration
+.env
+.env.local
+*.env
+
+# SQLite databases & runtime data
+*.db
+*.sqlite
+*.sqlite3
+database/*.db
+
+# Generated export files and temporary downloads
+exports/*
+!exports/.gitkeep
+temp_*
+*.pdf
+
+# Logs
+*.log
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
