@@ -95,6 +95,17 @@ class DENRScraper(BaseScraper):
                 continue
 
             records = self.parse_html_listing(resp.text, cat_name, cat_url, year_filter=year)
+
+            # Use Chromium only when a successful HTTP page contains no parseable
+            # records; this supports ordinary client-rendered public listings.
+            # A 403/challenge response is never sent through this fallback.
+            if not records:
+                rendered_html = self.fetch_rendered_html(cat_url)
+                if rendered_html:
+                    records = self.parse_html_listing(
+                        rendered_html, cat_name, cat_url, year_filter=year
+                    )
+
             if records:
                 ins, dups = self.save_records(records)
                 total_inserted += ins
