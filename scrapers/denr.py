@@ -34,10 +34,10 @@ class DENRScraper(BaseScraper):
             total_pages=str(len(target_cats)),
             records_collected=0,
             status="Running",
-            message="Connecting to DENR Digital Archive Portal..."
+            message="Connecting to official DENR national portal (denr.gov.ph)..."
         )
 
-        test_url = "http://www.denrtwelve.com:8090/das12/"
+        test_url = "https://denr.gov.ph/"
         resp = self.fetch_url(test_url)
 
         is_blocked = False

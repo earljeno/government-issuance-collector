@@ -69,18 +69,18 @@ DEPARTMENTS = {
     "DENR": {
         "name": "Department of Environment and Natural Resources",
         "code": "DENR",
-        "base_url": "http://www.denrtwelve.com:8090/das12/",
+        "base_url": "https://denr.gov.ph/",
         "categories": {
-            "Administrative Orders": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=19",
-            "Memorandum Circulars and Orders": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=20",
-            "Joint Administrative Orders & Circulars": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=22",
-            "Executive Orders": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=21",
-            "Republic Acts": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=23",
-            "Presidential Decrees": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=24",
-            "Commonwealth Acts": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=10&sub=25",
-            "Special Orders": "http://www.denrtwelve.com:8090/das12/index.php?view=category&cat=13&sub=30",
-            "Technical Bulletins": "https://elibrary.bmb.gov.ph/elibrary/laws-and-policies/technical-bulletins/",
-            "BMB Memorandum Circulars": "https://elibrary.bmb.gov.ph/elibrary/laws-and-policies/bmb-memorandum-circulars/"
+            "Administrative Orders": "https://denr.gov.ph/laws-and-policies/administrative-orders/",
+            "Memorandum Circulars": "https://denr.gov.ph/laws-and-policies/memorandum-circulars/",
+            "Memorandum Orders": "https://denr.gov.ph/laws-and-policies/memorandum-orders/",
+            "Joint Administrative Orders": "https://denr.gov.ph/laws-and-policies/joint-administrative-orders/",
+            "Joint Memorandum Circulars": "https://denr.gov.ph/laws-and-policies/joint-memorandum-circulars/",
+            "Special Orders": "https://denr.gov.ph/laws-and-policies/special-orders/",
+            "Executive Orders": "https://denr.gov.ph/laws-and-policies/executive-orders/",
+            "Republic Acts": "https://denr.gov.ph/laws-and-policies/republic-acts/",
+            "Presidential Decrees": "https://denr.gov.ph/laws-and-policies/presidential-decrees/",
+            "Commonwealth Acts": "https://denr.gov.ph/laws-and-policies/commonwealth-acts/"
         }
     },
     "DepEd": {
