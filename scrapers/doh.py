@@ -166,6 +166,29 @@ class DOHScraper(BaseScraper):
                         )
                     ]
 
+                # If the successful response is a JS shell, render it with a
+                # normal Chromium session. Access challenges are detected and
+                # rejected by fetch_rendered_html rather than solved or bypassed.
+                if not records:
+                    rendered_html = self.fetch_rendered_html(page_url)
+                    if rendered_html:
+                        records = self.parse_html_listing(
+                            rendered_html,
+                            cat_name,
+                            page_url,
+                            year_filter=None,
+                        )
+                        if year:
+                            year_value = str(year)
+                            records = [
+                                record for record in records
+                                if year_value in (
+                                    str(record.publication_date or "")
+                                    + " " + str(record.title or "")
+                                    + " " + str(record.issuance_number or "")
+                                )
+                            ]
+
                 # An actually empty listing page is the end-of-pagination signal.
                 if not records:
                     logger.info(
