@@ -146,14 +146,27 @@ class DOHScraper(BaseScraper):
                     logger.warning("[DOH] %s: %s", cat_name, error)
                     break
 
+                # Parse the full page before applying the year filter. Otherwise a
+                # page containing only other years could look like end-of-pagination.
                 records = self.parse_html_listing(
                     page_resp.text,
                     cat_name,
                     page_url,
-                    year_filter=year,
+                    year_filter=None,
                 )
 
-                # An empty parsed page is the normal end-of-pagination signal.
+                if year:
+                    year_value = str(year)
+                    records = [
+                        record for record in records
+                        if year_value in (
+                            str(record.publication_date or "")
+                            + " " + str(record.title or "")
+                            + " " + str(record.issuance_number or "")
+                        )
+                    ]
+
+                # An actually empty listing page is the end-of-pagination signal.
                 if not records:
                     logger.info(
                         "[DOH] No listing records on %s page %s; pagination complete.",
