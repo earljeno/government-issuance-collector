@@ -1,0 +1,114 @@
+import unittest
+import config
+config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+
+from app import app
+from database.db import init_db, get_issuance_count
+
+class TestAppEndpoints(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        init_db()
+
+    def setUp(self):
+        self.client = app.test_client()
+        from database.db import save_issuance
+        from database.models import IssuanceRecord
+        save_issuance(IssuanceRecord(
+            department="Department of Agriculture",
+            category="Administrative Orders",
+            issuance_number="AO No. 01",
+            title="General Guidelines for Testing",
+            publication_date="2026-01-01",
+            source_url="https://da.gov.ph/ao1.pdf"
+        ))
+
+    def test_dashboard_get(self):
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Philippine Government Issuance Title Collector", resp.data)
+        self.assertIn(b"Department of Agriculture", resp.data)
+        self.assertIn(b"Department of Health", resp.data)
+        self.assertIn(b"Department of Environment and Natural Resources", resp.data)
+        self.assertIn(b"Department of Education", resp.data)
+
+    def test_api_status(self):
+        resp = self.client.get("/api/status")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("departments", data)
+        self.assertIn("total_records", data)
+        self.assertIn("progress", data)
+
+    def test_api_records(self):
+        resp = self.client.get("/api/records?page=1&page_size=10")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("records", data)
+        self.assertIn("total_count", data)
+
+    def test_export_word(self):
+        resp = self.client.get("/api/export/word")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        self.assertGreater(len(resp.data), 1000)
+
+    def test_export_excel(self):
+        resp = self.client.get("/api/export/excel")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertGreater(len(resp.data), 1000)
+
+    def test_export_csv(self):
+        resp = self.client.get("/api/export/csv")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "text/csv")
+        self.assertGreater(len(resp.data), 50)
+
+    def test_export_txt(self):
+        resp = self.client.get("/api/export/txt")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "text/plain")
+        self.assertGreater(len(resp.data), 50)
+
+    def test_export_specific_department_csv(self):
+        resp = self.client.get("/api/export/csv?department=Department+of+Agriculture")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "text/csv")
+        content = resp.data.decode("utf-8-sig")
+        self.assertIn("Department of Agriculture", content)
+        self.assertIn("AO No. 01", content)
+        disposition = resp.headers.get("Content-Disposition", "")
+        self.assertIn("DA_Issuances_", disposition)
+
+    def test_export_specific_department_word(self):
+        resp = self.client.get("/api/export/word?department=Department+of+Agriculture")
+        self.assertEqual(resp.status_code, 200)
+        disposition = resp.headers.get("Content-Disposition", "")
+        self.assertIn("DA_Issuances_", disposition)
+        self.assertGreater(len(resp.data), 1000)
+
+    def test_export_specific_department_excel(self):
+        resp = self.client.get("/api/export/excel?department=Department+of+Agriculture")
+        self.assertEqual(resp.status_code, 200)
+        disposition = resp.headers.get("Content-Disposition", "")
+        self.assertIn("DA_Issuances_", disposition)
+        self.assertGreater(len(resp.data), 1000)
+
+    def test_export_specific_department_txt(self):
+        resp = self.client.get("/api/export/txt?department=Department+of+Agriculture")
+        self.assertEqual(resp.status_code, 200)
+        content = resp.data.decode("utf-8")
+        self.assertIn("DEPARTMENT OF AGRICULTURE", content)
+        disposition = resp.headers.get("Content-Disposition", "")
+        self.assertIn("DA_Issuances_", disposition)
+
+    def test_export_empty_department_returns_404(self):
+        resp = self.client.get("/api/export/csv?department=NonExistentDepartment")
+        self.assertEqual(resp.status_code, 404)
+        data = resp.get_json()
+        self.assertFalse(data["success"])
+        self.assertIn("No records found", data["message"])
+
+if __name__ == "__main__":
+    unittest.main()
