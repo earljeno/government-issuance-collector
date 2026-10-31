@@ -67,19 +67,17 @@ DEPARTMENTS = {
     "DOH": {
         "name": "Department of Health",
         "code": "DOH",
-        "base_url": "https://doh.gov.ph/",
+        "base_url": "https://app.doh.gov.ph:1024/",
         "categories": {
-            "Administrative Orders": "https://doh.gov.ph/health-policies/administrative-orders/",
-            "Implementing Rules and Regulations": "https://doh.gov.ph/health-policies/implementing-rules-and-regulations/",
-            "Memorandum Circulars": "https://doh.gov.ph/health-policies/memorandum-circulars/",
-            "Memorandum Orders": "https://doh.gov.ph/health-policies/memorandum-orders/",
-            "Department Circulars": "https://doh.gov.ph/health-policies/department-circulars/",
-            "Department Memoranda": "https://doh.gov.ph/health-policies/department-memoranda/",
-            "Joint Administrative Orders": "https://doh.gov.ph/health-policies/joint-administrative-orders/",
-            "Joint Circulars": "https://doh.gov.ph/health-policies/joint-circulars/",
-            "Republic Acts": "https://doh.gov.ph/health-policies/republic-acts/",
-            "Executive Orders": "https://doh.gov.ph/health-policies/executive-orders/",
-            "Presidential Decrees": "https://doh.gov.ph/health-policies/presidential-decrees/"
+            "Administrative Orders": "KMITS_AISAO",
+            "Department Circulars": "KMITS_AISDC",
+            "Memorandum Circulars": "KMITS_AISMC",
+            "Implementing Rules and Regulations": "KMITS_AISIRR",
+            "Joint Administrative Orders": "KMITS_AISJAO",
+            "Joint Memorandum Circulars": "KMITS_AISJMC",
+            "Joint Circulars": "KMITS_AISJC",
+            "Executive Orders": "KMITS_AISEO",
+            "Republic Acts": "KMITS_AISRA"
         }
     },
     "DENR": {
@@ -109,7 +107,6 @@ DEPARTMENTS = {
             "DepEd Orders": "https://www.deped.gov.ph/deped-orders/",
             "Joint Memorandum Circular": "https://www.deped.gov.ph/category/issuances/joint-memorandum-circular/",
             "Office Orders": "https://www.deped.gov.ph/category/issuances/office-order/",
-            "Unnumbered Memoranda": "https://www.deped.gov.ph/category/issuances/unnumbered-memorandum/",
             "Implementing Rules and Regulations": "https://www.deped.gov.ph/category/issuances/implementing-rules-and-regulations/"
         }
     }

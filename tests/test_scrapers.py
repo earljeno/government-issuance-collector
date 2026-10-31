@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch, MagicMock
 from pathlib import Path
 import config
 # Use an isolated test database so production/user records are never wiped
@@ -96,6 +97,52 @@ class TestScrapersAndApp(unittest.TestCase):
         self.assertEqual(records[0].title, "National Health Workforce Strategic Plan 2026-2030")
         self.assertEqual(records[0].publication_date, "September 12, 2026")
         self.assertEqual(records[0].source_url, "https://doh.gov.ph/policies/ao2026-0015.pdf")
+
+
+    def test_doh_api_scrape_mocked(self):
+        """Verify DOH scraper interacts correctly with API endpoints."""
+        scraper = DOHScraper()
+
+        def mock_post(url, *args, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            if 'SearchDocuments' in url:
+                mock_resp.json.return_value = {'success': True, 'error': '', 'data': None}
+            elif 'GetFirstPage' in url:
+                mock_resp.json.return_value = {
+                    'success': True,
+                    'error': '',
+                    'data': {
+                        'items': [{
+                            'documentId': 99999,
+                            'issuanceNumber': 'AO-2026-TEST',
+                            'issuanceType': 'Administrative Order',
+                            'subject': 'Mock Policy Guideline',
+                            'documentDate': '2026-06-15T00:00:00+08:00'
+                        }],
+                        'firstPage': True,
+                        'lastPage': True
+                    }
+                }
+            return mock_resp
+
+        def mock_get(url, *args, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            return mock_resp
+
+        scraper.session.get = mock_get
+        scraper.session.post = mock_post
+
+        inserted = scraper.scrape(categories=['Administrative Orders'], max_pages_per_category=1)
+        self.assertGreaterEqual(inserted, 1)
+
+        records = get_issuances(department='Department of Health', limit=50)
+        test_records = [r for r in records if r['issuance_number'] == 'AO-2026-TEST']
+        self.assertEqual(len(test_records), 1)
+        self.assertEqual(test_records[0]['title'], 'Mock Policy Guideline')
+        self.assertEqual(test_records[0]['publication_date'], '2026-06-15')
+        self.assertEqual(test_records[0]['source_url'], 'https://app.doh.gov.ph:1024/Rest/GetFile?id=99999')
 
     def test_denr_parsing(self):
         """Verify DENR table parsing from HTML fixture."""

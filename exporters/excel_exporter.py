@@ -36,11 +36,9 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
     else:
         ws.title = "Government Issuances"
 
-    # Define Header
     headers = ["Department", "Category", "Issuance Number", "Title", "Date", "Source URL"]
     ws.append(headers)
 
-    # Style Header Row
     header_fill = PatternFill(start_color="102C57", end_color="102C57", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -51,7 +49,6 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
         cell.font = header_font
         cell.alignment = header_alignment
 
-    # Border style
     thin_border = Border(
         left=Side(style='thin', color='E0E0E0'),
         right=Side(style='thin', color='E0E0E0'),
@@ -59,7 +56,6 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
         bottom=Side(style='thin', color='E0E0E0')
     )
 
-    # Append Data
     for row_idx, item in enumerate(issuances, start=2):
         row_data = [
             item.get("department", ""),
@@ -71,7 +67,6 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
         ]
         ws.append(row_data)
 
-        # Style data row
         for col_idx in range(1, len(headers) + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.font = Font(name="Calibri", size=10)
@@ -81,13 +76,9 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
             else:
                 cell.alignment = Alignment(vertical="center", wrap_text=False)
 
-    # Freeze Header Row
     ws.freeze_panes = "A2"
-
-    # Auto Filter
     ws.auto_filter.ref = ws.dimensions
 
-    # Adjust Column Widths
     for col in ws.columns:
         max_len = 0
         col_letter = get_column_letter(col[0].column)
@@ -95,10 +86,10 @@ def generate_excel_document(issuances: List[Dict], filename: Optional[str] = Non
             val_str = str(cell.value or "")
             if len(val_str) > max_len:
                 max_len = len(val_str)
-        # Cap between 12 and 60
+        # Clamp column width between 12 and 60
         ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 60)
 
-    # Specific override for Title and URL
+    # Specific width overrides for longer text content
     ws.column_dimensions["D"].width = 50
     ws.column_dimensions["F"].width = 40
 

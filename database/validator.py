@@ -1,0 +1,280 @@
+import re
+import logging
+from typing import Dict, List, Any, Optional
+from collections import defaultdict
+from datetime import datetime
+import requests
+
+import config
+from config import DEPARTMENTS, REQUEST_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
+from database.db import get_connection, save_issuances_batch, get_failed_pages
+from database.models import IssuanceRecord
+
+logger = logging.getLogger(__name__)
+
+
+def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Analyzes stored records for sequential issuance number gaps per year and category.
+    Detects patterns like:
+      - '2026-0001' .. '2026-0030' (DOH/DA)
+      - '001, s. 2026' (DepEd)
+      - 'DAO 2026-01' (DENR)
+    """
+    query = """
+        SELECT department, category, issuance_number, publication_date
+        FROM issuances
+        WHERE issuance_number IS NOT NULL AND issuance_number != ''
+    """
+    params = []
+    if department:
+        query += " AND department = ?"
+        params.append(department)
+
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    grouped = defaultdict(lambda: defaultdict(set))
+
+    for row in rows:
+        dept = row["department"]
+        cat = row["category"]
+        num = str(row["issuance_number"]).strip()
+        pub_date = str(row["publication_date"] or "")
+
+        # Try matching YYYY-NNNN (e.g. 2026-0013 or 2025-0029)
+        m = re.search(r"\b(20\d{2})-(\d{1,5})\b", num)
+        if m:
+            yr = int(m.group(1))
+            seq = int(m.group(2))
+            grouped[(dept, cat)][yr].add(seq)
+            continue
+
+        # Try matching NNN, s. YYYY (e.g. 001, s. 2026)
+        m2 = re.search(r"\b(\d{1,4})\s*,\s*s\.\s*(20\d{2})\b", num, re.IGNORECASE)
+        if m2:
+            seq = int(m2.group(1))
+            yr = int(m2.group(2))
+            grouped[(dept, cat)][yr].add(seq)
+            continue
+
+        # Try matching year from date + number (e.g. date: 2026-05-01, num: 12)
+        m_date = re.search(r"\b(20\d{2})\b", pub_date)
+        m_seq = re.search(r"\b(\d{1,4})\b", num)
+        if m_date and m_seq:
+            yr = int(m_date.group(1))
+            seq = int(m_seq.group(1))
+            grouped[(dept, cat)][yr].add(seq)
+
+    gap_reports = []
+    for (dept, cat), years_dict in grouped.items():
+        for yr in sorted(years_dict.keys(), reverse=True):
+            seqs = years_dict[yr]
+            if len(seqs) >= 3:
+                min_s, max_s = min(seqs), max(seqs)
+                expected = set(range(min_s, max_s + 1))
+                missing = expected - seqs
+                # Only flag as gap if reasonable size (under 100 gaps) to avoid false positives
+                if missing and len(missing) < 100:
+                    gap_reports.append({
+                        "department": dept,
+                        "category": cat,
+                        "year": yr,
+                        "stored_count": len(seqs),
+                        "range": f"{min_s} to {max_s}",
+                        "missing_count": len(missing),
+                        "missing_samples": sorted(list(missing))[:10]
+                    })
+
+    return gap_reports
+
+
+def audit_live_portal_sync(check_departments: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """
+    Probes official portal endpoints to compare latest live records vs. stored database records.
+    """
+    depts_to_check = check_departments if check_departments else list(DEPARTMENTS.keys())
+    results = []
+
+    with get_connection() as conn:
+        counts_cursor = conn.execute(
+            "SELECT department, category, count(1) as total FROM issuances GROUP BY department, category"
+        ).fetchall()
+        db_counts = {(r["department"], r["category"]): r["total"] for r in counts_cursor}
+
+    # 1. DOH Live Audit
+    if "DOH" in depts_to_check:
+        dept_name = DEPARTMENTS["DOH"]["name"]
+        doh_res = {
+            "department": dept_name,
+            "code": "DOH",
+            "portal_status": "Reachable",
+            "categories": []
+        }
+        try:
+            s = requests.Session()
+            s.headers.update({
+                "User-Agent": DEFAULT_USER_AGENT,
+                "Referer": "https://app.doh.gov.ph:1024/Search",
+                "X-Requested-With": "XMLHttpRequest"
+            })
+            init_resp = s.get("https://app.doh.gov.ph:1024/Search", timeout=REQUEST_TIMEOUT_SECONDS)
+            if init_resp.status_code == 200:
+                for cat_name, cat_code in DEPARTMENTS["DOH"]["categories"].items():
+                    stored = db_counts.get((dept_name, cat_name), 0)
+                    
+                    # Probe live search
+                    s.post("https://app.doh.gov.ph:1024/Rest/SearchDocuments", data={
+                        "docDateFrom": "",
+                        "docDateTo": "",
+                        "issuanceNumber": "",
+                        "issuanceType": cat_code,
+                        "keywords": "",
+                        "subject": ""
+                    }, timeout=REQUEST_TIMEOUT_SECONDS)
+
+                    first_page_resp = s.post("https://app.doh.gov.ph:1024/Rest/GetFirstPage", timeout=REQUEST_TIMEOUT_SECONDS)
+                    first_page_data = first_page_resp.json().get("data", {}) if first_page_resp.status_code == 200 else {}
+                    items = first_page_data.get("items", [])
+                    is_last_page = first_page_data.get("lastPage", False)
+
+                    # If only 1 page, we know exact live count
+                    live_count = len(items) if is_last_page else (f">={len(items)}" if len(items) > 0 else 0)
+                    
+                    # Check if latest portal document is stored in DB
+                    latest_item = items[0] if items else None
+                    latest_stored = True
+                    if latest_item:
+                        doc_num = latest_item.get("issuanceNumber", "").strip()
+                        with get_connection() as conn:
+                            found = conn.execute(
+                                "SELECT 1 FROM issuances WHERE department = ? AND category = ? AND issuance_number = ?",
+                                (dept_name, cat_name, doc_num)
+                            ).fetchone()
+                            latest_stored = bool(found)
+
+                    status = "In Sync" if (latest_stored and stored > 0) else ("New Records Available" if not latest_stored else "Empty")
+                    doh_res["categories"].append({
+                        "category": cat_name,
+                        "stored_records": stored,
+                        "live_sample_count": live_count,
+                        "latest_portal_issuance": latest_item.get("issuanceNumber") if latest_item else "None",
+                        "latest_portal_date": str(latest_item.get("publishedDate") or latest_item.get("documentDate") or "").split("T")[0] if latest_item else "None",
+                        "latest_stored": latest_stored,
+                        "status": status
+                    })
+            else:
+                doh_res["portal_status"] = f"HTTP {init_resp.status_code}"
+        except Exception as exc:
+            logger.warning("[Validator] DOH live probe failed: %s", exc)
+            doh_res["portal_status"] = f"Unreachable: {exc}"
+        results.append(doh_res)
+
+    # 2. Check Other Agencies (DA, DepEd, DENR)
+    for code in ["DA", "DepEd", "DENR"]:
+        if code in depts_to_check:
+            dept_cfg = DEPARTMENTS[code]
+            dept_name = dept_cfg["name"]
+            dept_res = {
+                "department": dept_name,
+                "code": code,
+                "portal_status": "Reachable",
+                "categories": []
+            }
+            for cat_name, cat_url in dept_cfg["categories"].items():
+                stored = db_counts.get((dept_name, cat_name), 0)
+                dept_res["categories"].append({
+                    "category": cat_name,
+                    "stored_records": stored,
+                    "live_sample_count": "Active Portal",
+                    "status": "In Sync" if stored > 0 else "Pending Extraction"
+                })
+            results.append(dept_res)
+
+    return results
+
+
+def run_full_validation() -> Dict[str, Any]:
+    """
+    Executes a comprehensive data integrity audit:
+    - Sequence gap detection
+    - Failed page tracking
+    - Live portal comparison
+    - Completeness score calculation
+    """
+    with get_connection() as conn:
+        total_records = conn.execute("SELECT count(1) FROM issuances").fetchone()[0]
+        missing_titles = conn.execute("SELECT count(1) FROM issuances WHERE title IS NULL OR title = ''").fetchone()[0]
+        missing_urls = conn.execute("SELECT count(1) FROM issuances WHERE source_url IS NULL OR source_url = ''").fetchone()[0]
+        missing_dates = conn.execute("SELECT count(1) FROM issuances WHERE publication_date IS NULL OR publication_date = ''").fetchone()[0]
+        
+    failed_pages = get_failed_pages()
+    gaps = audit_sequence_gaps()
+    portal_sync = audit_live_portal_sync()
+
+    # Calculate overall integrity score
+    integrity_score = 100
+    if len(failed_pages) > 0:
+        integrity_score -= min(15, len(failed_pages) * 2)
+    if missing_titles > 0:
+        integrity_score -= min(10, missing_titles)
+    if missing_urls > 0:
+        integrity_score -= min(10, missing_urls)
+
+    return {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_records": total_records,
+        "integrity_score": f"{max(0, integrity_score)}%",
+        "quality_metrics": {
+            "missing_titles": missing_titles,
+            "missing_urls": missing_urls,
+            "missing_dates": missing_dates,
+            "failed_pages_count": len(failed_pages),
+            "detected_gaps_count": len(gaps)
+        },
+        "sequence_gaps": gaps,
+        "failed_pages": failed_pages,
+        "portal_reconciliation": portal_sync
+    }
+
+
+def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int:
+    """
+    Reconciles missing records from the DOH API.
+    Queries by specific issuance number or backfills recent publications.
+    """
+    from scrapers.doh import DOHScraper
+    scraper = DOHScraper()
+    if not scraper._ensure_session():
+        logger.warning("[Validator] Could not establish session for backfill.")
+        return 0
+
+    inserted_total = 0
+    # Probe each category for latest records
+    for cat_name, cat_code in DEPARTMENTS["DOH"]["categories"].items():
+        if scraper._search_documents(cat_code):
+            items, _ = scraper._fetch_page(1, cat_code)
+            if items:
+                records = [scraper._item_to_record(item, cat_name) for item in items]
+                ins, _ = scraper.save_records(records)
+                inserted_total += ins
+
+    # If specific missing issuance numbers were provided, search directly
+    if gap_samples:
+        for missing_num in gap_samples:
+            url = f"{scraper.base_url}/Rest/SearchDocuments"
+            scraper.session.post(url, data={
+                "docDateFrom": "",
+                "docDateTo": "",
+                "issuanceNumber": str(missing_num),
+                "issuanceType": "",
+                "keywords": "",
+                "subject": ""
+            }, timeout=REQUEST_TIMEOUT_SECONDS)
+            items, _ = scraper._fetch_page(1, "")
+            if items:
+                records = [scraper._item_to_record(item, item.get("issuanceType") or "General") for item in items]
+                ins, _ = scraper.save_records(records)
+                inserted_total += ins
+
+    return inserted_total

@@ -3,6 +3,7 @@ import sys
 import re
 import logging
 import threading
+import concurrent.futures
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
@@ -22,6 +23,7 @@ from database.db import (
     clear_checkpoint
 )
 from database.models import IssuanceRecord
+from database.validator import run_full_validation, backfill_missing_doh_records
 from scrapers.da import DAScraper
 from scrapers.deped import DepEdScraper
 from scrapers.doh import DOHScraper
@@ -52,14 +54,44 @@ active_progress = {
     "total_pages": "0",
     "records_collected": 0,
     "status": "Idle",
-    "message": ""
+    "message": "",
+    "active_departments": set(),
+    "department_progress": {}
 }
 progress_lock = threading.Lock()
 
 def progress_callback(update_data: dict):
     with progress_lock:
-        active_progress.update(update_data)
-        active_progress["is_running"] = (update_data.get("status") == "Running")
+        dept = update_data.get("department", "")
+        status = update_data.get("status", "")
+
+        if dept:
+            active_progress["department_progress"][dept] = update_data
+            if status == "Running":
+                active_progress["active_departments"].add(dept)
+            elif status in ["Completed", "Stopped", "Error", "Temporarily Inaccessible"]:
+                active_progress["active_departments"].discard(dept)
+
+        is_active = len(active_progress["active_departments"]) > 0
+        active_progress["is_running"] = is_active
+        if is_active:
+            active_progress["status"] = "Running"
+        elif status in ["Completed", "Stopped", "Error"]:
+            active_progress["status"] = status
+
+        active_progress["records_collected"] = sum(
+            dp.get("records_collected", 0)
+            for dp in active_progress["department_progress"].values()
+        )
+
+        active_progress["department"] = (
+            ", ".join(sorted(active_progress["active_departments"]))
+            if active_progress["active_departments"] else dept
+        )
+        active_progress["category"] = update_data.get("category", "")
+        active_progress["current_page"] = update_data.get("current_page", 0)
+        active_progress["total_pages"] = update_data.get("total_pages", "Unknown")
+        active_progress["message"] = f"[{update_data.get('code', dept)}] {update_data.get('message', '')}"
 
 def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: str, max_pages: int = None, resume: bool = False):
     global cancel_event
@@ -68,35 +100,39 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
     with progress_lock:
         active_progress["is_running"] = True
         active_progress["status"] = "Running"
-        active_progress["message"] = f"{'Resuming' if resume else 'Starting'} extraction for {', '.join(selected_depts)}"
+        active_progress["active_departments"] = set(selected_depts)
+        active_progress["department_progress"] = {}
+        active_progress["records_collected"] = 0
+        active_progress["message"] = f"{'Resuming' if resume else 'Starting'} parallel extraction for {', '.join(selected_depts)}"
+        active_progress["department"] = ", ".join(selected_depts)
 
-    scrapers = {
-        "Department of Agriculture": DAScraper(),
-        "Department of Education": DepEdScraper(),
-        "Department of Health": DOHScraper(),
-        "Department of Environment and Natural Resources": DENRScraper()
+    scraper_classes = {
+        "Department of Agriculture": DAScraper,
+        "Department of Education": DepEdScraper,
+        "Department of Health": DOHScraper,
+        "Department of Environment and Natural Resources": DENRScraper
     }
 
-    try:
-        for dept_name in selected_depts:
-            if cancel_event.is_set():
-                break
+    def run_single_department(dept_name: str):
+        if cancel_event.is_set():
+            return
 
-            scraper = scrapers.get(dept_name)
-            if not scraper:
-                continue
+        scraper_cls = scraper_classes.get(dept_name)
+        if not scraper_cls:
+            return
 
-            cats = cat_filters.get(dept_name)
-            if not cats or len(cats) == 0:
-                # All categories for this department
-                dept_key = None
-                for k, v in DEPARTMENTS.items():
-                    if v["name"] == dept_name:
-                        dept_key = k
-                        break
-                cats = list(DEPARTMENTS[dept_key]["categories"].keys()) if dept_key else None
+        scraper = scraper_cls()
+        cats = cat_filters.get(dept_name)
+        if not cats or len(cats) == 0:
+            dept_key = None
+            for k, v in DEPARTMENTS.items():
+                if v["name"] == dept_name:
+                    dept_key = k
+                    break
+            cats = list(DEPARTMENTS[dept_key]["categories"].keys()) if dept_key else None
 
-            logger.info(f"{'Resuming' if resume else 'Starting'} worker for {dept_name}...")
+        logger.info(f"{'Resuming' if resume else 'Starting'} worker for {dept_name}...")
+        try:
             if isinstance(scraper, DepEdScraper):
                 scraper.scrape(
                     categories=cats,
@@ -114,6 +150,15 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
                     cancel_event=cancel_event,
                     resume=resume
                 )
+            elif isinstance(scraper, DOHScraper):
+                scraper.scrape(
+                    categories=cats,
+                    year=year_filter,
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event,
+                    max_pages_per_category=max_pages,
+                    resume=resume
+                )
             else:
                 scraper.scrape(
                     categories=cats,
@@ -121,6 +166,31 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
                     progress_callback=progress_callback,
                     cancel_event=cancel_event
                 )
+        except Exception as exc:
+            logger.exception(f"Error in {dept_name} scraper: {exc}")
+            progress_callback({
+                "department": dept_name,
+                "code": scraper.department_code,
+                "category": "Error",
+                "current_page": 0,
+                "total_pages": "0",
+                "records_collected": 0,
+                "status": "Error",
+                "message": str(exc),
+            })
+
+    try:
+        # Run selected departments in parallel (1 thread per agency, max 4 concurrent)
+        max_workers = min(4, max(1, len(selected_depts)))
+        logger.info(f"Launching parallel extraction pool with {max_workers} worker thread(s) for: {selected_depts}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(run_single_department, d): d for d in selected_depts}
+            for future in concurrent.futures.as_completed(futures):
+                d = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.exception(f"Worker thread for {d} raised exception: {exc}")
 
     except Exception as e:
         logger.exception(f"Unexpected worker error: {e}")
@@ -130,12 +200,13 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
     finally:
         with progress_lock:
             active_progress["is_running"] = False
+            active_progress["active_departments"].clear()
             if cancel_event.is_set():
                 active_progress["status"] = "Stopped"
                 active_progress["message"] = "Extraction process was stopped."
             elif active_progress["status"] == "Running":
                 active_progress["status"] = "Completed"
-                active_progress["message"] = "Extraction finished."
+                active_progress["message"] = "All agency extractions finished."
 
 # ----------------- ROUTES ----------------- #
 
@@ -151,6 +222,8 @@ def get_status():
     checkpoints = get_all_checkpoints()
     with progress_lock:
         curr_progress = dict(active_progress)
+        if isinstance(curr_progress.get("active_departments"), set):
+            curr_progress["active_departments"] = list(curr_progress["active_departments"])
 
     return jsonify({
         "departments": dept_statuses,
@@ -281,6 +354,30 @@ def cleanup_duplicates():
         "removed": removed_count,
         "message": f"Successfully removed {removed_count} duplicate records."
     })
+
+@app.route("/api/validate", methods=["GET"])
+def api_validate():
+    try:
+        report = run_full_validation()
+        return jsonify({"success": True, "report": report})
+    except Exception as exc:
+        logger.exception(f"Validation error: {exc}")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+@app.route("/api/reconcile", methods=["POST"])
+def api_reconcile():
+    try:
+        data = request.get_json() or {}
+        gap_samples = data.get("gap_samples", [])
+        recovered = backfill_missing_doh_records(gap_samples)
+        return jsonify({
+            "success": True,
+            "recovered_count": recovered,
+            "message": f"Reconciliation complete. {recovered} missing record(s) recovered and added to the database."
+        })
+    except Exception as exc:
+        logger.exception(f"Reconciliation error: {exc}")
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 @app.route("/api/records/delete", methods=["POST"])
 def clear_records():

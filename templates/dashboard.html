@@ -7,472 +7,642 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="app-header">
+    <!-- Top Administrative Header -->
+    <header class="app-header" role="banner">
         <div class="header-container">
             <div class="header-brand">
-                <div class="flag-stripe"></div>
-                <div>
-                    <h1>Republic of the Philippines</h1>
-                    <h2>Government Issuance Title Collector</h2>
+                <div class="flag-stripe" aria-hidden="true"></div>
+                <div class="brand-text">
+                    <span class="agency-super">Republic of the Philippines</span>
+                    <h1 class="agency-title">Government Issuance Title Collector</h1>
                 </div>
             </div>
-            <div class="header-stats">
+            <div class="header-stats" role="region" aria-label="System Metrics">
                 <div class="stat-badge">
                     <span class="stat-label">Total Records</span>
                     <span class="stat-value" id="global-total-records">0</span>
                 </div>
                 <div class="stat-badge">
                     <span class="stat-label">System Status</span>
-                    <span class="stat-value status-idle" id="global-system-status">Idle</span>
+                    <span class="stat-value status-idle" id="global-system-status" aria-live="polite">Idle</span>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="main-container">
-        <!-- Live Progress Banner (Shown when extraction active) -->
-        <section id="progress-card" class="card progress-card" style="display: none;">
+    <main class="main-container" id="main-content" role="main">
+        <!-- Live Extraction Progress Card (Visible during active tasks) -->
+        <section id="progress-card" class="card progress-card" style="display: none;" role="region" aria-live="polite" aria-label="Extraction Progress">
             <div class="progress-header">
-                <div class="spinner"></div>
-                <div>
-                    <h3 id="progress-status-title">Extraction in Progress...</h3>
-                    <p id="progress-message">Initializing extraction worker...</p>
+                <div class="spinner" aria-hidden="true"></div>
+                <div class="progress-title-block">
+                    <h2 id="progress-status-title" class="progress-title">Extraction in Progress...</h2>
+                    <p id="progress-message" class="progress-sub">Initializing extraction worker...</p>
                 </div>
-                <button id="btn-stop-extraction" class="btn btn-danger btn-sm">Stop Extraction</button>
+                <button id="btn-stop-extraction" class="btn btn-danger btn-sm" type="button">Stop Extraction</button>
             </div>
             <div class="progress-details-grid">
-                <div><strong>Current Department:</strong> <span id="prog-dept">-</span></div>
-                <div><strong>Current Category:</strong> <span id="prog-cat">-</span></div>
-                <div><strong>Current Page:</strong> <span id="prog-page">-</span> / <span id="prog-total-pages">-</span></div>
-                <div><strong>Records Collected:</strong> <span id="prog-records">0</span></div>
+                <div class="prog-item"><span class="prog-label">Department:</span> <span id="prog-dept" class="prog-data">-</span></div>
+                <div class="prog-item"><span class="prog-label">Category:</span> <span id="prog-cat" class="prog-data">-</span></div>
+                <div class="prog-item"><span class="prog-label">Progress:</span> <span class="prog-data"><span id="prog-page">-</span> / <span id="prog-total-pages">-</span> pages</span></div>
+                <div class="prog-item"><span class="prog-label">Records Gathered:</span> <span id="prog-records" class="prog-data">0</span></div>
             </div>
-            <div class="progress-bar-container">
+            <div class="progress-bar-container" role="progressbar" aria-label="Task progress">
                 <div id="progress-bar-fill" class="progress-bar-fill indeterminate"></div>
             </div>
         </section>
 
-        <!-- Global Action Bar -->
-        <section class="card controls-card">
-            <div class="controls-row">
-                <div class="control-group">
-                    <button id="btn-extract-all" class="btn btn-primary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                        Extract All Departments
+        <!-- Command & Extraction Controls Section -->
+        <section class="card controls-card" aria-labelledby="controls-section-title">
+            <div class="section-title-bar">
+                <h2 id="controls-section-title" class="section-heading">Extraction & Operations Console</h2>
+                <span class="section-meta">Select target scope and execution parameters</span>
+            </div>
+
+            <div class="controls-layout">
+                <!-- Action Buttons Cluster -->
+                <div class="action-cluster">
+                    <button id="btn-extract-all" class="btn btn-primary" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <span>Extract All Departments</span>
                     </button>
-                    <button id="btn-extract-selected" class="btn btn-secondary">
-                        Extract Selected Department
+                    <button id="btn-extract-selected" class="btn btn-secondary" type="button">
+                        <span>Extract Selected Department</span>
                     </button>
+                    <button id="btn-manual-url" class="btn btn-outline" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        <span>Manual URL / HTML Import</span>
+                    </button>
+                    <button id="btn-retry-failed" class="btn btn-outline" type="button" title="Retry failed pages">
+                        <span>Retry Failed Pages (<span id="failed-pages-badge">0</span>)</span>
+                    </button>
+                    <button id="btn-validate-records" class="btn btn-outline" type="button" title="Audit database records against live portal and detect missing data">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                        <span>Audit & Reconcile Data</span>
+                    </button>
+                </div>
+
+                <!-- Parameters & Checkpoint Resume Group -->
+                <div class="params-cluster">
+                    <div class="form-field-inline">
+                        <label for="filter-year" class="field-label">Year:</label>
+                        <select id="filter-year" class="form-select form-select-sm">
+                            <option value="">All Available Years</option>
+                            <option value="2026">2026</option>
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                            <option value="2023">2023</option>
+                            <option value="2022">2022</option>
+                            <option value="2021">2021</option>
+                            <option value="2020">2020</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field-inline">
+                        <label for="filter-max-pages" class="field-label" title="Limit pages per category">Page Limit:</label>
+                        <select id="filter-max-pages" class="form-select form-select-sm">
+                            <option value="">All Pages (Complete)</option>
+                            <option value="1">1 Page (Quick Test)</option>
+                            <option value="3">3 Pages</option>
+                            <option value="5">5 Pages</option>
+                            <option value="10">10 Pages</option>
+                        </select>
+                    </div>
+
                     <div class="resume-wrapper" id="resume-wrapper">
-                        <select id="resume-agency-select" class="form-select" style="max-width: 280px; padding: 7px 10px; font-size: 13px;" title="Select agency to resume">
-                            <option value="Department of Education">Department of Education (DepEd)</option>
-                            <option value="Department of Agriculture">Department of Agriculture (DA)</option>
-                            <option value="Department of Health">Department of Health (DOH)</option>
+                        <label for="resume-agency-select" class="sr-only">Resume Agency Checkpoint</label>
+                        <select id="resume-agency-select" class="form-select form-select-sm" title="Select agency to resume">
+                            <option value="Department of Education">DepEd (Department of Education)</option>
+                            <option value="Department of Agriculture">DA (Department of Agriculture)</option>
+                            <option value="Department of Health">DOH (Department of Health)</option>
                             <option value="Department of Environment and Natural Resources">DENR</option>
                             <option value="all">All Interrupted Agencies</option>
                         </select>
-                        <button id="btn-resume" class="btn btn-warning" title="Resume extraction from checkpoint">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
-                            Resume Selected Agency
+                        <button id="btn-resume" class="btn btn-warning btn-sm" type="button" title="Resume extraction from checkpoint">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+                            <span>Resume</span>
                         </button>
                     </div>
-                    <button id="btn-manual-url" class="btn btn-outline">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                        Manual URL / HTML Import
-                    </button>
-                    <button id="btn-retry-failed" class="btn btn-outline" title="Retry failed pages">
-                        Retry Failed Pages (<span id="failed-pages-badge">0</span>)
-                    </button>
-                </div>
-
-                <div class="filter-group">
-                    <label for="filter-year">Year Filter:</label>
-                    <select id="filter-year" class="form-select">
-                        <option value="">All Available Years</option>
-                        <option value="2026">2026</option>
-                        <option value="2025">2025</option>
-                        <option value="2024">2024</option>
-                        <option value="2023">2023</option>
-                        <option value="2022">2022</option>
-                        <option value="2021">2021</option>
-                        <option value="2020">2020</option>
-                    </select>
-
-                    <label for="filter-max-pages" title="Useful for quick tests">Page Limit:</label>
-                    <select id="filter-max-pages" class="form-select">
-                        <option value="">All Pages (Complete)</option>
-                        <option value="1">1 Page (Quick Test)</option>
-                        <option value="3">3 Pages</option>
-                        <option value="5">5 Pages</option>
-                        <option value="10">10 Pages</option>
-                    </select>
                 </div>
             </div>
         </section>
 
-        <!-- Department Cards Section -->
-        <section class="departments-grid">
-            <!-- DA Card -->
-            <div class="card department-card" id="card-DA" data-dept="Department of Agriculture">
-                <div class="dept-header">
-                    <input type="radio" name="dept-select" value="Department of Agriculture" id="sel-da">
-                    <div class="dept-title-area">
-                        <label for="sel-da" class="dept-name">Department of Agriculture (DA)</label>
+        <!-- Department Target Grid -->
+        <section class="departments-section" aria-labelledby="dept-section-title">
+            <div class="section-title-bar">
+                <h2 id="dept-section-title" class="section-heading">Monitored Government Agencies</h2>
+                <span class="section-meta">Select active department for targeted collection and category filtering</span>
+            </div>
+
+            <div class="departments-grid">
+                <!-- Department of Agriculture (DA) Card -->
+                <article class="card department-card" id="card-DA" data-dept="Department of Agriculture">
+                    <header class="dept-header">
+                        <div class="dept-select-wrap">
+                            <input type="radio" name="dept-select" value="Department of Agriculture" id="sel-da" class="dept-radio">
+                            <label for="sel-da" class="dept-name">Department of Agriculture (DA)</label>
+                        </div>
                         <span class="dept-badge badge-idle" id="badge-DA">Idle</span>
-                    </div>
-                </div>
-                <div class="dept-stats">
-                    <div class="dept-stat-box">
-                        <span class="stat-num" id="count-DA">0</span>
-                        <span class="stat-lbl">Records</span>
-                    </div>
-                    <div class="dept-stat-box">
-                        <span class="stat-val" id="last-DA">Never</span>
-                        <span class="stat-lbl">Last Run</span>
-                    </div>
-                </div>
-                <div class="dept-categories-list">
-                    <h4>Categories (14 Available):</h4>
-                    <div class="category-checkboxes" id="cats-DA">
-                        {% for cat, url in departments["DA"]["categories"].items() %}
-                        <label class="cat-label">
-                            <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DA">
-                            <span>{{ cat }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="dept-card-footer">
-                    <div class="dept-footer-buttons">
-                        <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Agriculture">Extract DA</button>
-                        <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Agriculture" id="resume-btn-DA" title="Resume DA extraction from checkpoint">Resume DA ⏯️</button>
-                        <div class="dropdown dept-export-dropdown">
-                            <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Agriculture">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                Export DA ▾
-                            </button>
-                            <div class="dropdown-menu dept-export-menu">
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="word">Word (.docx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="excel">Excel (.xlsx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="csv">CSV (.csv)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="txt">TXT Summary</button>
-                            </div>
+                    </header>
+
+                    <div class="dept-stats-row">
+                        <div class="dept-metric">
+                            <span class="metric-num" id="count-DA">0</span>
+                            <span class="metric-label">Records</span>
+                        </div>
+                        <div class="dept-metric">
+                            <span class="metric-val" id="last-DA">Never</span>
+                            <span class="metric-label">Last Run</span>
                         </div>
                     </div>
-                    <a href="https://www.da.gov.ph/laws-and-issuances/administrative-orders/" target="_blank" class="dept-link">Official Portal &nearr;</a>
-                </div>
-            </div>
 
-            <!-- DOH Card -->
-            <div class="card department-card" id="card-DOH" data-dept="Department of Health">
-                <div class="dept-header">
-                    <input type="radio" name="dept-select" value="Department of Health" id="sel-doh">
-                    <div class="dept-title-area">
-                        <label for="sel-doh" class="dept-name">Department of Health (DOH)</label>
+                    <div class="dept-categories-list">
+                        <div class="categories-header">
+                            <h3 class="categories-title">Categories ({{ departments["DA"]["categories"]|length }} Available)</h3>
+                        </div>
+                        <div class="category-checkboxes" id="cats-DA">
+                            {% for cat, url in departments["DA"]["categories"].items() %}
+                            <label class="cat-label">
+                                <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DA">
+                                <span>{{ cat }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <footer class="dept-card-footer">
+                        <div class="dept-footer-buttons">
+                            <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Agriculture" type="button">Extract DA</button>
+                            <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Agriculture" id="resume-btn-DA" type="button" title="Resume DA extraction from checkpoint">Resume DA</button>
+                            <div class="dropdown dept-export-dropdown">
+                                <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Agriculture" aria-haspopup="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export DA</span>
+                                    <span class="dropdown-caret" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="dropdown-menu dept-export-menu" role="menu">
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="word" role="menuitem">Word Document (.docx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="excel" role="menuitem">Excel Workbook (.xlsx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="csv" role="menuitem">CSV Spreadsheet</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Agriculture" data-format="txt" role="menuitem">Plain Text Summary</button>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="https://www.da.gov.ph/laws-and-issuances/administrative-orders/" target="_blank" rel="noopener noreferrer" class="dept-portal-link">
+                            <span>Official Portal</span>
+                            <span class="link-arrow" aria-hidden="true">↗</span>
+                        </a>
+                    </footer>
+                </article>
+
+                <!-- Department of Health (DOH) Card -->
+                <article class="card department-card" id="card-DOH" data-dept="Department of Health">
+                    <header class="dept-header">
+                        <div class="dept-select-wrap">
+                            <input type="radio" name="dept-select" value="Department of Health" id="sel-doh" class="dept-radio">
+                            <label for="sel-doh" class="dept-name">Department of Health (DOH)</label>
+                        </div>
                         <span class="dept-badge badge-idle" id="badge-DOH">Idle</span>
-                    </div>
-                </div>
-                <div class="dept-stats">
-                    <div class="dept-stat-box">
-                        <span class="stat-num" id="count-DOH">0</span>
-                        <span class="stat-lbl">Records</span>
-                    </div>
-                    <div class="dept-stat-box">
-                        <span class="stat-val" id="last-DOH">Never</span>
-                        <span class="stat-lbl">Last Run</span>
-                    </div>
-                </div>
-                <div class="dept-categories-list">
-                    <h4>Categories (8 Available):</h4>
-                    <div class="category-checkboxes" id="cats-DOH">
-                        {% for cat, url in departments["DOH"]["categories"].items() %}
-                        <label class="cat-label">
-                            <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DOH">
-                            <span>{{ cat }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="dept-card-footer">
-                    <div class="dept-footer-buttons">
-                        <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Health">Extract DOH</button>
-                        <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Health" id="resume-btn-DOH" title="Resume DOH extraction from checkpoint">Resume DOH ⏯️</button>
-                        <div class="dropdown dept-export-dropdown">
-                            <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Health">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                Export DOH ▾
-                            </button>
-                            <div class="dropdown-menu dept-export-menu">
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="word">Word (.docx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="excel">Excel (.xlsx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="csv">CSV (.csv)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="txt">TXT Summary</button>
-                            </div>
+                    </header>
+
+                    <div class="dept-stats-row">
+                        <div class="dept-metric">
+                            <span class="metric-num" id="count-DOH">0</span>
+                            <span class="metric-label">Records</span>
+                        </div>
+                        <div class="dept-metric">
+                            <span class="metric-val" id="last-DOH">Never</span>
+                            <span class="metric-label">Last Run</span>
                         </div>
                     </div>
-                    <a href="https://doh.gov.ph/" target="_blank" class="dept-link">Official Portal &nearr;</a>
-                </div>
-            </div>
 
-            <!-- DENR Card -->
-            <div class="card department-card" id="card-DENR" data-dept="Department of Environment and Natural Resources">
-                <div class="dept-header">
-                    <input type="radio" name="dept-select" value="Department of Environment and Natural Resources" id="sel-denr">
-                    <div class="dept-title-area">
-                        <label for="sel-denr" class="dept-name">Department of Environment and Natural Resources (DENR)</label>
+                    <div class="dept-categories-list">
+                        <div class="categories-header">
+                            <h3 class="categories-title">Categories ({{ departments["DOH"]["categories"]|length }} Available)</h3>
+                        </div>
+                        <div class="category-checkboxes" id="cats-DOH">
+                            {% for cat, url in departments["DOH"]["categories"].items() %}
+                            <label class="cat-label">
+                                <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DOH">
+                                <span>{{ cat }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <footer class="dept-card-footer">
+                        <div class="dept-footer-buttons">
+                            <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Health" type="button">Extract DOH</button>
+                            <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Health" id="resume-btn-DOH" type="button" title="Resume DOH extraction from checkpoint">Resume DOH</button>
+                            <div class="dropdown dept-export-dropdown">
+                                <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Health" aria-haspopup="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export DOH</span>
+                                    <span class="dropdown-caret" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="dropdown-menu dept-export-menu" role="menu">
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="word" role="menuitem">Word Document (.docx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="excel" role="menuitem">Excel Workbook (.xlsx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="csv" role="menuitem">CSV Spreadsheet</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Health" data-format="txt" role="menuitem">Plain Text Summary</button>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="https://doh.gov.ph/" target="_blank" rel="noopener noreferrer" class="dept-portal-link">
+                            <span>Official Portal</span>
+                            <span class="link-arrow" aria-hidden="true">↗</span>
+                        </a>
+                    </footer>
+                </article>
+
+                <!-- Department of Environment and Natural Resources (DENR) Card -->
+                <article class="card department-card" id="card-DENR" data-dept="Department of Environment and Natural Resources">
+                    <header class="dept-header">
+                        <div class="dept-select-wrap">
+                            <input type="radio" name="dept-select" value="Department of Environment and Natural Resources" id="sel-denr" class="dept-radio">
+                            <label for="sel-denr" class="dept-name">DENR (Environment & Natural Resources)</label>
+                        </div>
                         <span class="dept-badge badge-idle" id="badge-DENR">Idle</span>
-                    </div>
-                </div>
-                <div class="dept-stats">
-                    <div class="dept-stat-box">
-                        <span class="stat-num" id="count-DENR">0</span>
-                        <span class="stat-lbl">Records</span>
-                    </div>
-                    <div class="dept-stat-box">
-                        <span class="stat-val" id="last-DENR">Never</span>
-                        <span class="stat-lbl">Last Run</span>
-                    </div>
-                </div>
-                <div class="dept-categories-list">
-                    <h4>Categories (5 Available):</h4>
-                    <div class="category-checkboxes" id="cats-DENR">
-                        {% for cat, url in departments["DENR"]["categories"].items() %}
-                        <label class="cat-label">
-                            <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DENR">
-                            <span>{{ cat }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="dept-card-footer">
-                    <div class="dept-footer-buttons">
-                        <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Environment and Natural Resources">Extract DENR</button>
-                        <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Environment and Natural Resources" id="resume-btn-DENR" title="Resume DENR extraction from checkpoint">Resume DENR ⏯️</button>
-                        <div class="dropdown dept-export-dropdown">
-                            <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Environment and Natural Resources">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                Export DENR ▾
-                            </button>
-                            <div class="dropdown-menu dept-export-menu">
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="word">Word (.docx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="excel">Excel (.xlsx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="csv">CSV (.csv)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="txt">TXT Summary</button>
-                            </div>
-                        </div>
-                    </div>
-                    <a href="https://elibrary.bmb.gov.ph/elibrary/laws-and-policies/denr-administrative-orders/" target="_blank" class="dept-link">Official E-Library &nearr;</a>
-                </div>
-            </div>
+                    </header>
 
-            <!-- DepEd Card -->
-            <div class="card department-card" id="card-DepEd" data-dept="Department of Education">
-                <div class="dept-header">
-                    <input type="radio" name="dept-select" value="Department of Education" id="sel-deped">
-                    <div class="dept-title-area">
-                        <label for="sel-deped" class="dept-name">Department of Education (DepEd)</label>
-                        <span class="dept-badge badge-idle" id="badge-DepEd">Idle</span>
-                    </div>
-                </div>
-                <div class="dept-stats">
-                    <div class="dept-stat-box">
-                        <span class="stat-num" id="count-DepEd">0</span>
-                        <span class="stat-lbl">Records</span>
-                    </div>
-                    <div class="dept-stat-box">
-                        <span class="stat-val" id="last-DepEd">Never</span>
-                        <span class="stat-lbl">Last Run</span>
-                    </div>
-                </div>
-                <div class="dept-categories-list">
-                    <h4>Categories (5 Available, Prioritizing Advisories & Memoranda):</h4>
-                    <div class="category-checkboxes" id="cats-DepEd">
-                        {% for cat, url in departments["DepEd"]["categories"].items() %}
-                        <label class="cat-label">
-                            <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DepEd">
-                            <span>{{ cat }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="dept-card-footer">
-                    <div class="dept-footer-buttons">
-                        <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Education">Extract DepEd</button>
-                        <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Education" id="resume-btn-DepEd" title="Resume DepEd extraction from checkpoint">Resume DepEd ⏯️</button>
-                        <div class="dropdown dept-export-dropdown">
-                            <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Education">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                Export DepEd ▾
-                            </button>
-                            <div class="dropdown-menu dept-export-menu">
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="word">Word (.docx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="excel">Excel (.xlsx)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="csv">CSV (.csv)</button>
-                                <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="txt">TXT Summary</button>
-                            </div>
+                    <div class="dept-stats-row">
+                        <div class="dept-metric">
+                            <span class="metric-num" id="count-DENR">0</span>
+                            <span class="metric-label">Records</span>
+                        </div>
+                        <div class="dept-metric">
+                            <span class="metric-val" id="last-DENR">Never</span>
+                            <span class="metric-label">Last Run</span>
                         </div>
                     </div>
-                    <a href="https://www.deped.gov.ph/category/issuances/" target="_blank" class="dept-link">Official Portal &nearr;</a>
-                </div>
+
+                    <div class="dept-categories-list">
+                        <div class="categories-header">
+                            <h3 class="categories-title">Categories ({{ departments["DENR"]["categories"]|length }} Available)</h3>
+                        </div>
+                        <div class="category-checkboxes" id="cats-DENR">
+                            {% for cat, url in departments["DENR"]["categories"].items() %}
+                            <label class="cat-label">
+                                <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DENR">
+                                <span>{{ cat }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <footer class="dept-card-footer">
+                        <div class="dept-footer-buttons">
+                            <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Environment and Natural Resources" type="button">Extract DENR</button>
+                            <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Environment and Natural Resources" id="resume-btn-DENR" type="button" title="Resume DENR extraction from checkpoint">Resume DENR</button>
+                            <div class="dropdown dept-export-dropdown">
+                                <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Environment and Natural Resources" aria-haspopup="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export DENR</span>
+                                    <span class="dropdown-caret" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="dropdown-menu dept-export-menu" role="menu">
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="word" role="menuitem">Word Document (.docx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="excel" role="menuitem">Excel Workbook (.xlsx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="csv" role="menuitem">CSV Spreadsheet</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Environment and Natural Resources" data-format="txt" role="menuitem">Plain Text Summary</button>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="https://elibrary.bmb.gov.ph/elibrary/laws-and-policies/denr-administrative-orders/" target="_blank" rel="noopener noreferrer" class="dept-portal-link">
+                            <span>Official E-Library</span>
+                            <span class="link-arrow" aria-hidden="true">↗</span>
+                        </a>
+                    </footer>
+                </article>
+
+                <!-- Department of Education (DepEd) Card -->
+                <article class="card department-card" id="card-DepEd" data-dept="Department of Education">
+                    <header class="dept-header">
+                        <div class="dept-select-wrap">
+                            <input type="radio" name="dept-select" value="Department of Education" id="sel-deped" class="dept-radio">
+                            <label for="sel-deped" class="dept-name">Department of Education (DepEd)</label>
+                        </div>
+                        <span class="dept-badge badge-idle" id="badge-DepEd">Idle</span>
+                    </header>
+
+                    <div class="dept-stats-row">
+                        <div class="dept-metric">
+                            <span class="metric-num" id="count-DepEd">0</span>
+                            <span class="metric-label">Records</span>
+                        </div>
+                        <div class="dept-metric">
+                            <span class="metric-val" id="last-DepEd">Never</span>
+                            <span class="metric-label">Last Run</span>
+                        </div>
+                    </div>
+
+                    <div class="dept-categories-list">
+                        <div class="categories-header">
+                            <h3 class="categories-title">Categories ({{ departments["DepEd"]["categories"]|length }} Available)</h3>
+                        </div>
+                        <div class="category-checkboxes" id="cats-DepEd">
+                            {% for cat, url in departments["DepEd"]["categories"].items() %}
+                            <label class="cat-label">
+                                <input type="checkbox" checked value="{{ cat }}" class="cat-cb-DepEd">
+                                <span>{{ cat }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <footer class="dept-card-footer">
+                        <div class="dept-footer-buttons">
+                            <button class="btn btn-sm btn-primary extract-single-btn" data-dept="Department of Education" type="button">Extract DepEd</button>
+                            <button class="btn btn-sm btn-outline-warning resume-single-btn" data-dept="Department of Education" id="resume-btn-DepEd" type="button" title="Resume DepEd extraction from checkpoint">Resume DepEd</button>
+                            <div class="dropdown dept-export-dropdown">
+                                <button class="btn btn-sm btn-outline dept-export-trigger" type="button" data-dept="Department of Education" aria-haspopup="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export DepEd</span>
+                                    <span class="dropdown-caret" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="dropdown-menu dept-export-menu" role="menu">
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="word" role="menuitem">Word Document (.docx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="excel" role="menuitem">Excel Workbook (.xlsx)</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="csv" role="menuitem">CSV Spreadsheet</button>
+                                    <button type="button" class="dropdown-item export-action-item" data-dept="Department of Education" data-format="txt" role="menuitem">Plain Text Summary</button>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="https://www.deped.gov.ph/category/issuances/" target="_blank" rel="noopener noreferrer" class="dept-portal-link">
+                            <span>Official Portal</span>
+                            <span class="link-arrow" aria-hidden="true">↗</span>
+                        </a>
+                    </footer>
+                </article>
             </div>
         </section>
 
-        <!-- Records Explorer Section -->
-        <section class="card explorer-card">
-            <div class="explorer-header">
+        <!-- Records Explorer & Document Production Section -->
+        <section class="card explorer-card" aria-labelledby="explorer-section-title">
+            <div class="explorer-header-block">
                 <div>
-                    <h3>Extracted Issuance Titles</h3>
-                    <p class="subtitle">Review collected titles, search, filter by department, and export to official documents.</p>
+                    <h2 id="explorer-section-title" class="section-heading">Extracted Issuance Catalog</h2>
+                    <p class="subtitle">Search, filter, inspect metadata, and compile clean legal documents.</p>
                 </div>
-                <div class="export-controls-container">
+
+                <!-- Export & Maintenance Toolbar -->
+                <div class="export-controls-container" role="toolbar" aria-label="Export and Maintenance Actions">
                     <div class="export-dept-selector-row">
-                        <label for="export-dept-select" class="export-select-label">Export Department:</label>
-                        <select id="export-dept-select" class="form-select export-dept-select">
+                        <label for="export-dept-select" class="export-select-label">Export Scope:</label>
+                        <select id="export-dept-select" class="form-select form-select-sm export-dept-select">
                             <option value="">All Departments</option>
                             <option value="Department of Agriculture">Department of Agriculture (DA)</option>
                             <option value="Department of Education">Department of Education (DepEd)</option>
                             <option value="Department of Health">Department of Health (DOH)</option>
-                            <option value="Department of Environment and Natural Resources">Department of Environment and Natural Resources (DENR)</option>
+                            <option value="Department of Environment and Natural Resources">DENR</option>
                         </select>
                     </div>
+
                     <div class="export-btn-group">
-                        <button class="btn btn-success export-btn" data-format="word" id="btn-export-word" title="Export Word Document (.docx)">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <button class="btn btn-success export-btn" data-format="word" id="btn-export-word" type="button" title="Export Microsoft Word Document (.docx)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                             <span id="btn-export-word-text">Export Word (.docx)</span>
                         </button>
-                        <button class="btn btn-success export-btn" data-format="excel" id="btn-export-excel" title="Export Excel Spreadsheet (.xlsx)">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        <button class="btn btn-success export-btn" data-format="excel" id="btn-export-excel" type="button" title="Export Excel Spreadsheet (.xlsx)">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
                             <span id="btn-export-excel-text">Export Excel (.xlsx)</span>
                         </button>
-                        <button class="btn btn-outline export-btn" data-format="csv" id="btn-export-csv" title="Export CSV Data">CSV</button>
-                        <button class="btn btn-outline export-btn" data-format="txt" id="btn-export-txt" title="Export Text Summary">TXT</button>
-                        <button id="btn-cleanup-duplicates" class="btn btn-warning" title="Scrub duplicate entries">Remove Duplicates</button>
-                        <button id="btn-clear-records" class="btn btn-danger-outline" title="Clear database">Clear All</button>
+                        <button class="btn btn-outline export-btn" data-format="csv" id="btn-export-csv" type="button" title="Export CSV Data">CSV</button>
+                        <button class="btn btn-outline export-btn" data-format="txt" id="btn-export-txt" type="button" title="Export Plain Text Summary">TXT</button>
+                        <button id="btn-cleanup-duplicates" class="btn btn-warning" type="button" title="Remove duplicate records from database">Scrub Duplicates</button>
+                        <button id="btn-clear-records" class="btn btn-danger-outline" type="button" title="Purge database records">Clear Database</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Table Filters Bar -->
-            <div class="table-filter-bar">
-                <input type="text" id="table-search" class="form-input" placeholder="Search title or issuance number...">
-                <select id="table-filter-dept" class="form-select">
-                    <option value="">All Departments</option>
-                    <option value="Department of Agriculture">Department of Agriculture</option>
-                    <option value="Department of Education">Department of Education</option>
-                    <option value="Department of Health">Department of Health</option>
-                    <option value="Department of Environment and Natural Resources">DENR</option>
-                </select>
-                <input type="text" id="table-filter-year" class="form-input" style="max-width: 120px;" placeholder="Year (e.g. 2026)">
-                <button id="btn-apply-filters" class="btn btn-secondary btn-sm">Filter</button>
-                <button id="btn-reset-filters" class="btn btn-outline btn-sm">Reset</button>
+            <!-- Table Search & Filter Bar -->
+            <div class="table-filter-bar" role="search" aria-label="Filter Issuance Records">
+                <div class="filter-input-wrap">
+                    <input type="text" id="table-search" class="form-input form-input-search" placeholder="Search by issuance title, number, or keyword..." aria-label="Search issuances">
+                </div>
+                <div class="filter-select-wrap">
+                    <label for="table-filter-dept" class="sr-only">Filter by Department</label>
+                    <select id="table-filter-dept" class="form-select">
+                        <option value="">All Departments</option>
+                        <option value="Department of Agriculture">Department of Agriculture</option>
+                        <option value="Department of Education">Department of Education</option>
+                        <option value="Department of Health">Department of Health</option>
+                        <option value="Department of Environment and Natural Resources">DENR</option>
+                    </select>
+                </div>
+                <div class="filter-year-wrap">
+                    <label for="table-filter-year" class="sr-only">Filter by Year</label>
+                    <input type="text" id="table-filter-year" class="form-input" placeholder="Year (e.g. 2026)" pattern="[0-9]{4}">
+                </div>
+                <div class="filter-actions-wrap">
+                    <button id="btn-apply-filters" class="btn btn-secondary btn-sm" type="button">Apply Filter</button>
+                    <button id="btn-reset-filters" class="btn btn-outline btn-sm" type="button">Reset</button>
+                </div>
             </div>
 
-            <!-- Data Table -->
-            <div class="table-responsive">
+            <!-- Tabular Records View -->
+            <div class="table-responsive" tabindex="0" role="region" aria-label="Issuance Records Table">
                 <table class="data-table" id="issuances-table">
                     <thead>
                         <tr>
-                            <th style="width: 50px;">#</th>
-                            <th style="width: 140px;">Department</th>
-                            <th style="width: 160px;">Category</th>
-                            <th style="width: 140px;">Issuance No.</th>
-                            <th>Issuance Title</th>
-                            <th style="width: 120px;">Date</th>
-                            <th style="width: 80px;">Source</th>
+                            <th scope="col" class="col-num">#</th>
+                            <th scope="col" class="col-dept">Department</th>
+                            <th scope="col" class="col-cat">Category</th>
+                            <th scope="col" class="col-issno">Issuance No.</th>
+                            <th scope="col" class="col-title">Issuance Title</th>
+                            <th scope="col" class="col-date">Date</th>
+                            <th scope="col" class="col-src">Source</th>
                         </tr>
                     </thead>
                     <tbody id="issuances-tbody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted">No records collected yet. Click "Extract All Departments" or select an individual department above.</td>
+                            <td colspan="7" class="table-empty-cell">
+                                <div class="empty-state-wrap">
+                                    <p class="empty-state-title">No records collected yet.</p>
+                                    <p class="empty-state-desc">Select an agency and click "Extract Selected Department" or "Extract All Departments" to begin gathering official issuance titles.</p>
+                                </div>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- Table Pagination -->
-            <div class="pagination-footer">
-                <span id="page-summary">Showing 0 of 0 records</span>
-                <div class="page-controls">
-                    <button id="page-prev" class="btn btn-sm btn-outline" disabled>&laquo; Previous</button>
-                    <span id="page-current">Page 1 of 1</span>
-                    <button id="page-next" class="btn btn-sm btn-outline" disabled>Next &raquo;</button>
-                </div>
-            </div>
+            <!-- Table Pagination Controls -->
+            <footer class="pagination-footer" aria-label="Pagination Navigation">
+                <span id="page-summary" class="page-summary" aria-live="polite">Showing 0 of 0 records</span>
+                <nav class="page-controls" aria-label="Page navigation">
+                    <button id="page-prev" class="btn btn-sm btn-outline" type="button" disabled aria-label="Previous Page">Previous</button>
+                    <span id="page-current" class="page-current" aria-live="polite">Page 1 of 1</span>
+                    <button id="page-next" class="btn btn-sm btn-outline" type="button" disabled aria-label="Next Page">Next</button>
+                </nav>
+            </footer>
         </section>
     </main>
 
-    <!-- Manual URL / HTML Import Modal -->
-    <div id="modal-manual" class="modal-backdrop" style="display: none;">
+    <!-- Manual URL or Raw HTML Import Modal -->
+    <div id="modal-manual" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-manual-title">
         <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Manual URL or HTML Listing Import</h3>
-                <button class="modal-close" id="modal-manual-close">&times;</button>
-            </div>
+            <header class="modal-header">
+                <h3 id="modal-manual-title" class="modal-title">Manual URL or Raw HTML Import</h3>
+                <button class="modal-close" id="modal-manual-close" type="button" aria-label="Close dialog">&times;</button>
+            </header>
             <div class="modal-body">
                 <p class="modal-desc">
-                    If an official government website changes its structure or is temporarily blocked by WAF/Cloudflare,
-                    paste the direct listing page URL or paste the raw HTML source of the page below. The system will
-                    automatically analyze the structure, extract titles and metadata, and let you preview before saving.
+                    If an agency portal updates its layout or enforces anti-bot protections, provide either the direct URL or paste the raw HTML source of the issuance list. The extractor will parse table rows and article tags for confirmation prior to database entry.
                 </p>
 
                 <div class="form-group">
-                    <label for="manual-dept">Target Department:</label>
+                    <label for="manual-dept" class="field-label">Target Department:</label>
                     <select id="manual-dept" class="form-select">
                         <option value="Department of Agriculture">Department of Agriculture</option>
                         <option value="Department of Health">Department of Health</option>
                         <option value="Department of Environment and Natural Resources">Department of Environment and Natural Resources</option>
                         <option value="Department of Education">Department of Education</option>
-                        <option value="Manual Import">Other / Custom</option>
+                        <option value="Manual Import">Other / Custom Department</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label for="manual-cat">Issuance Category:</label>
-                    <input type="text" id="manual-cat" class="form-input" placeholder="e.g. Administrative Orders, Health Policies, etc.">
+                    <label for="manual-cat" class="field-label">Issuance Category:</label>
+                    <input type="text" id="manual-cat" class="form-input" placeholder="e.g. Administrative Orders, Department Circulars">
                 </div>
 
                 <div class="form-group">
-                    <label for="manual-url-input">Official Listing Webpage URL (Option A):</label>
-                    <input type="url" id="manual-url-input" class="form-input" placeholder="https://...">
+                    <label for="manual-url-input" class="field-label">Listing Webpage URL (Option A):</label>
+                    <input type="url" id="manual-url-input" class="form-input" placeholder="https://agency.gov.ph/issuances">
                 </div>
 
                 <div class="form-group">
-                    <label for="manual-html-input">OR Paste Raw HTML Content (Option B):</label>
-                    <textarea id="manual-html-input" class="form-textarea" rows="4" placeholder="Paste HTML source here if website is blocked or offline..."></textarea>
+                    <label for="manual-html-input" class="field-label">Or Raw HTML Source (Option B):</label>
+                    <textarea id="manual-html-input" class="form-textarea" rows="4" placeholder="Paste source HTML if site is protected or offline..."></textarea>
                 </div>
 
-                <div class="form-actions">
-                    <button id="btn-manual-analyze" class="btn btn-primary">Analyze & Preview Structure</button>
+                <div class="modal-action-row">
+                    <button id="btn-manual-analyze" class="btn btn-primary" type="button">Analyze & Preview Structure</button>
                 </div>
 
-                <!-- Preview Area -->
-                <div id="manual-preview-section" style="display: none; margin-top: 20px;">
-                    <div class="alert alert-info" id="manual-struct-info"></div>
-                    <div class="table-responsive" style="max-height: 250px;">
+                <!-- Interactive Preview Area -->
+                <div id="manual-preview-section" style="display: none;" class="manual-preview-section">
+                    <div class="alert alert-info" id="manual-struct-info" role="status"></div>
+                    <div class="table-responsive preview-table-wrap">
                         <table class="data-table" id="manual-preview-table">
                             <thead>
                                 <tr>
-                                    <th>No.</th>
-                                    <th>Title</th>
-                                    <th>Date</th>
-                                    <th>Link</th>
+                                    <th scope="col" style="width: 50px;">#</th>
+                                    <th scope="col">Title</th>
+                                    <th scope="col" style="width: 120px;">Date</th>
+                                    <th scope="col" style="width: 80px;">Link</th>
                                 </tr>
                             </thead>
                             <tbody id="manual-preview-tbody"></tbody>
                         </table>
                     </div>
-                    <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
-                        <button id="btn-manual-save" class="btn btn-success">Approve & Save Records</button>
+                    <div class="preview-actions">
+                        <button id="btn-manual-save" class="btn btn-success" type="button">Approve & Save Records</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Toast Notifications -->
-    <div id="toast" class="toast"></div>
+    <!-- Data Integrity & Reconciliation Audit Modal -->
+    <div id="modal-validate" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-validate-title">
+        <div class="modal-dialog modal-dialog-lg" style="max-width: 900px;">
+            <header class="modal-header">
+                <div>
+                    <h3 id="modal-validate-title" class="modal-title">Data Integrity Audit & Source Reconciliation</h3>
+                    <p class="modal-desc" style="margin: 4px 0 0; font-size: 0.85rem; color: var(--text-muted, #94a3b8);">
+                        Compares database holdings against official live portals and checks for number sequence gaps.
+                    </p>
+                </div>
+                <button class="modal-close" id="modal-validate-close" type="button" aria-label="Close dialog">&times;</button>
+            </header>
+            <div class="modal-body">
+                <!-- Metrics Summary Cards -->
+                <div class="validation-summary-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="dept-stat-box" style="padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #334155);">
+                        <span class="stat-num" id="val-integrity-score" style="color: #10b981;">100%</span>
+                        <span class="stat-lbl">Integrity Score</span>
+                    </div>
+                    <div class="dept-stat-box" style="padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #334155);">
+                        <span class="stat-num" id="val-total-records">0</span>
+                        <span class="stat-lbl">Total Stored Records</span>
+                    </div>
+                    <div class="dept-stat-box" style="padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #334155);">
+                        <span class="stat-num" id="val-detected-gaps" style="color: #f59e0b;">0</span>
+                        <span class="stat-lbl">Number Series Gaps</span>
+                    </div>
+                    <div class="dept-stat-box" style="padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #334155);">
+                        <span class="stat-num" id="val-failed-pages" style="color: #ef4444;">0</span>
+                        <span class="stat-lbl">Unresolved Pages</span>
+                    </div>
+                </div>
+
+                <!-- Action Controls Row -->
+                <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: 10px;">
+                        <button id="btn-run-validation" class="btn btn-primary btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                            <span>Re-scan Portals & Audit</span>
+                        </button>
+                        <button id="btn-reconcile-backfill" class="btn btn-success btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span>Reconcile & Backfill Missing</span>
+                        </button>
+                    </div>
+                    <span id="val-last-checked" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8);">-</span>
+                </div>
+
+                <!-- Tabs Navigation -->
+                <div style="display: flex; border-bottom: 1px solid var(--border-color, #334155); margin-bottom: 16px;">
+                    <button id="tab-btn-portal" class="btn btn-sm btn-outline" style="border-bottom: 2px solid var(--primary, #38bdf8); border-radius: 4px 4px 0 0;" type="button">Live Portal Reconciliation</button>
+                    <button id="tab-btn-gaps" class="btn btn-sm btn-outline" style="border: none; border-radius: 4px 4px 0 0;" type="button">Sequence Gaps & Missing Numbers</button>
+                </div>
+
+                <!-- Panel 1: Live Portal Reconciliation Table -->
+                <div id="panel-portal-reconciliation" class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="data-table" id="val-portal-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Agency & Category</th>
+                                <th scope="col" style="width: 110px;">Stored</th>
+                                <th scope="col">Latest Portal Item</th>
+                                <th scope="col" style="width: 110px;">Date</th>
+                                <th scope="col" style="width: 140px;">Sync Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="val-portal-tbody">
+                            <tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">Click "Re-scan Portals & Audit" to load live validation.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Panel 2: Sequence Gaps Table -->
+                <div id="panel-sequence-gaps" class="table-responsive" style="display: none; max-height: 350px; overflow-y: auto;">
+                    <table class="data-table" id="val-gaps-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Agency & Category</th>
+                                <th scope="col" style="width: 80px;">Year</th>
+                                <th scope="col">Series Range</th>
+                                <th scope="col" style="width: 90px;">Missing</th>
+                                <th scope="col">Sample Gaps</th>
+                            </tr>
+                        </thead>
+                        <tbody id="val-gaps-tbody">
+                            <tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">No number gaps detected in stored series.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Toast Notification Element -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="/static/js/dashboard.js"></script>
 </body>

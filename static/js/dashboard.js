@@ -57,6 +57,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const manualStructInfo = document.getElementById("manual-struct-info");
     const manualPreviewTbody = document.getElementById("manual-preview-tbody");
 
+    // Validation & Reconciliation Modal elements
+    const btnValidateRecords = document.getElementById("btn-validate-records");
+    const modalValidate = document.getElementById("modal-validate");
+    const modalValidateClose = document.getElementById("modal-validate-close");
+    const btnRunValidation = document.getElementById("btn-run-validation");
+    const btnReconcileBackfill = document.getElementById("btn-reconcile-backfill");
+    const tabBtnPortal = document.getElementById("tab-btn-portal");
+    const tabBtnGaps = document.getElementById("tab-btn-gaps");
+    const panelPortal = document.getElementById("panel-portal-reconciliation");
+    const panelGaps = document.getElementById("panel-sequence-gaps");
+    const valIntegrityScore = document.getElementById("val-integrity-score");
+    const valTotalRecords = document.getElementById("val-total-records");
+    const valDetectedGaps = document.getElementById("val-detected-gaps");
+    const valFailedPages = document.getElementById("val-failed-pages");
+    const valLastChecked = document.getElementById("val-last-checked");
+    const valPortalTbody = document.getElementById("val-portal-tbody");
+    const valGapsTbody = document.getElementById("val-gaps-tbody");
+
     // Toast helper
     function showToast(msg, duration = 3500) {
         const toast = document.getElementById("toast");
@@ -72,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/api/status");
             const data = await res.json();
+            const prog = data.progress || {};
 
             // Update stats
             globalTotalRecords.textContent = data.total_records.toLocaleString();
@@ -137,19 +156,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if (cp && cp.page && cp.page > 1) {
                     btn.className = "btn btn-sm btn-warning resume-single-btn";
-                    btn.textContent = `Resume ${code} (p.${cp.page}) ⏯️`;
+                    btn.textContent = `Resume ${code} (p.${cp.page})`;
                     btn.title = `Resume ${deptName} from ${cp.category || 'checkpoint'} (Page ${cp.page})`;
                 } else if (cp && cp.category) {
                     btn.className = "btn btn-sm btn-warning resume-single-btn";
-                    btn.textContent = `Resume ${code} (${cp.category}) ⏯️`;
+                    btn.textContent = `Resume ${code} (${cp.category})`;
                     btn.title = `Resume ${deptName} from category: ${cp.category}`;
                 } else if (isInterrupted) {
                     btn.className = "btn btn-sm btn-warning resume-single-btn";
-                    btn.textContent = `Resume ${code} ⏯️`;
+                    btn.textContent = `Resume ${code}`;
                     btn.title = `Resume ${deptName} from last stopped point`;
                 } else {
                     btn.className = "btn btn-sm btn-outline-warning resume-single-btn";
-                    btn.textContent = `Resume ${code} ⏯️`;
+                    btn.textContent = `Resume ${code}`;
                     btn.title = `Continue / Resume ${deptName}`;
                 }
             });
@@ -213,7 +232,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 progressCard.style.display = "block";
                 globalSystemStatus.textContent = "Running";
                 globalSystemStatus.className = "stat-value";
-                progressStatusTitle.textContent = `Extracting: ${prog.department || 'Processing'}...`;
+                const deptCount = (prog.active_departments && prog.active_departments.length) || 1;
+                progressStatusTitle.textContent = deptCount > 1
+                    ? `Extracting ${deptCount} Agencies in Parallel...`
+                    : `Extracting: ${prog.department || 'Processing'}...`;
                 progressMessage.textContent = prog.message || "Extraction active in background.";
                 progDept.textContent = prog.department || "-";
                 progCat.textContent = prog.category || "-";
@@ -787,6 +809,156 @@ document.addEventListener("DOMContentLoaded", () => {
             alert("Error saving records: " + err.message);
         }
     });
+
+    // Validation & Reconciliation Modal Logic
+    if (btnValidateRecords) {
+        btnValidateRecords.addEventListener("click", () => {
+            modalValidate.style.display = "flex";
+            loadValidationReport();
+        });
+    }
+
+    if (modalValidateClose) {
+        modalValidateClose.addEventListener("click", () => {
+            modalValidate.style.display = "none";
+        });
+    }
+
+    window.addEventListener("click", (e) => {
+        if (e.target === modalValidate) {
+            modalValidate.style.display = "none";
+        }
+    });
+
+    if (tabBtnPortal && tabBtnGaps) {
+        tabBtnPortal.addEventListener("click", () => {
+            panelPortal.style.display = "block";
+            panelGaps.style.display = "none";
+            tabBtnPortal.style.borderBottom = "2px solid var(--primary, #38bdf8)";
+            tabBtnGaps.style.borderBottom = "none";
+        });
+
+        tabBtnGaps.addEventListener("click", () => {
+            panelPortal.style.display = "none";
+            panelGaps.style.display = "block";
+            tabBtnGaps.style.borderBottom = "2px solid var(--primary, #38bdf8)";
+            tabBtnPortal.style.borderBottom = "none";
+        });
+    }
+
+    async function loadValidationReport() {
+        if (!valPortalTbody) return;
+        btnRunValidation.disabled = true;
+        btnRunValidation.textContent = "Auditing live portals...";
+
+        try {
+            const res = await fetch("/api/validate");
+            const data = await res.json();
+            btnRunValidation.disabled = false;
+            btnRunValidation.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> <span>Re-scan Portals & Audit</span>`;
+
+            if (!data.success) {
+                showToast("Validation check failed: " + (data.error || "Unknown error"));
+                return;
+            }
+
+            const r = data.report;
+            valIntegrityScore.textContent = r.integrity_score || "100%";
+            valTotalRecords.textContent = (r.total_records || 0).toLocaleString();
+            valDetectedGaps.textContent = r.quality_metrics.detected_gaps_count || 0;
+            valFailedPages.textContent = r.quality_metrics.failed_pages_count || 0;
+            valLastChecked.textContent = `Audited: ${r.timestamp}`;
+
+            // Populate Portal Sync Table
+            valPortalTbody.innerHTML = "";
+            let hasPortalRows = false;
+
+            (r.portal_reconciliation || []).forEach(dept => {
+                (dept.categories || []).forEach(cat => {
+                    hasPortalRows = true;
+                    const tr = document.createElement("tr");
+
+                    let badgeClass = "badge-completed";
+                    if (cat.status === "New Records Available") badgeClass = "badge-running";
+                    else if (cat.status === "Pending Extraction") badgeClass = "badge-idle";
+                    else if (cat.status !== "In Sync") badgeClass = "badge-inaccessible";
+
+                    tr.innerHTML = `
+                        <td>
+                            <strong>${dept.code}</strong> - ${cat.category}
+                        </td>
+                        <td><strong>${(cat.stored_records || 0).toLocaleString()}</strong></td>
+                        <td>${cat.latest_portal_issuance || 'None'}</td>
+                        <td>${cat.latest_portal_date || '-'}</td>
+                        <td><span class="dept-badge ${badgeClass}">${cat.status}</span></td>
+                    `;
+                    valPortalTbody.appendChild(tr);
+                });
+            });
+
+            if (!hasPortalRows) {
+                valPortalTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">No live portal reconciliation data available.</td></tr>`;
+            }
+
+            // Populate Sequence Gaps Table
+            valGapsTbody.innerHTML = "";
+            if (r.sequence_gaps && r.sequence_gaps.length > 0) {
+                r.sequence_gaps.forEach(g => {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td><strong>${g.department}</strong> - ${g.category}</td>
+                        <td><strong>${g.year}</strong></td>
+                        <td>Series: ${g.range}</td>
+                        <td><span style="color: #f59e0b; font-weight: 600;">${g.missing_count} missing</span></td>
+                        <td style="font-size: 0.82rem; color: var(--text-muted, #94a3b8);">${g.missing_samples.join(", ")}</td>
+                    `;
+                    valGapsTbody.appendChild(tr);
+                });
+            } else {
+                valGapsTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">No sequential numbering gaps detected. All recorded series are contiguous.</td></tr>`;
+            }
+
+        } catch (err) {
+            btnRunValidation.disabled = false;
+            btnRunValidation.textContent = "Re-scan Portals & Audit";
+            showToast("Error running validation: " + err.message);
+        }
+    }
+
+    if (btnRunValidation) {
+        btnRunValidation.addEventListener("click", loadValidationReport);
+    }
+
+    if (btnReconcileBackfill) {
+        btnReconcileBackfill.addEventListener("click", async () => {
+            btnReconcileBackfill.disabled = true;
+            btnReconcileBackfill.textContent = "Reconciling & backfilling...";
+
+            try {
+                const res = await fetch("/api/reconcile", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                btnReconcileBackfill.disabled = false;
+                btnReconcileBackfill.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span>Reconcile & Backfill Missing</span>`;
+
+                if (data.success) {
+                    showToast(data.message);
+                    loadValidationReport();
+                    loadRecords();
+                    pollStatus();
+                } else {
+                    alert("Reconciliation failed: " + (data.error || "Unknown error"));
+                }
+            } catch (err) {
+                btnReconcileBackfill.disabled = false;
+                btnReconcileBackfill.textContent = "Reconcile & Backfill Missing";
+                alert("Error during reconciliation: " + err.message);
+            }
+        });
+    }
 
     // Initial setup
     pollStatus();

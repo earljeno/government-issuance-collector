@@ -97,7 +97,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
     file_path = EXPORTS_DIR / filename
     doc = Document()
 
-    # Clear automated properties
     core_props = doc.core_properties
     core_props.author = "Government Records Repository"
     core_props.last_modified_by = ""
@@ -106,7 +105,7 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
     unique_depts = {item.get("department") for item in issuances if item.get("department")}
     single_dept = department_name or (list(unique_depts)[0] if len(unique_depts) == 1 else None)
 
-    # Configure A4 Paper Size (8.27 in x 11.69 in) with 0.8 in margins
+    # Standard A4 dimensions (8.27 x 11.69 in) with 0.8 in margins
     for section in doc.sections:
         section.page_width = Inches(8.27)
         section.page_height = Inches(11.69)
@@ -115,7 +114,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
         section.left_margin = Inches(0.8)
         section.right_margin = Inches(0.8)
 
-        # Configure Footer with clean, official page numbering
         footer = section.footer
         footer_p = footer.paragraphs[0]
         footer_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -130,7 +128,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
         page_run.font.color.rgb = RGBColor(128, 128, 128)
         add_footer_page_number(page_run)
 
-    # Document Title
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_p.paragraph_format.space_before = Pt(0)
@@ -143,9 +140,8 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
     run_title.font.name = "Calibri"
     run_title.font.size = Pt(17 if single_dept else 18)
     run_title.font.bold = True
-    run_title.font.color.rgb = RGBColor(16, 44, 87) # Official dark navy
+    run_title.font.color.rgb = RGBColor(16, 44, 87)
 
-    # Subtitle
     sub_p = doc.add_paragraph()
     sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sub_p.paragraph_format.space_after = Pt(18)
@@ -154,7 +150,7 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
     run_sub.font.size = Pt(10.5)
     run_sub.font.color.rgb = RGBColor(100, 100, 100)
 
-    # Group records: Department -> Category -> List of items
+    # Group records: Department -> Category -> items
     departments_order = [
         "Department of Agriculture",
         "Department of Health",
@@ -172,23 +168,21 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
             grouped[dept][cat] = []
         grouped[dept][cat].append(item)
 
-    # Sort departments
     all_depts = sorted(grouped.keys(), key=lambda d: departments_order.index(d) if d in departments_order else 99)
     roman_numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
 
-    # Table Column Widths (Sum = 6.67 inches to fit A4 8.27 - 1.6 margin)
+    # Column widths sum to 6.67 in to match available width on A4 with 0.8 in margins
     col_widths = [
-        Inches(0.45), # #
-        Inches(1.40), # Issuance No.
-        Inches(3.32), # Title
-        Inches(0.85), # Date
-        Inches(0.65)  # Source
+        Inches(0.45),
+        Inches(1.40),
+        Inches(3.32),
+        Inches(0.85),
+        Inches(0.65)
     ]
 
     for d_idx, dept in enumerate(all_depts):
         r_num = roman_numerals[d_idx] if d_idx < len(roman_numerals) else f"{d_idx+1}"
         
-        # Heading 1: Department
         dept_p = doc.add_paragraph()
         dept_p.paragraph_format.space_before = Pt(16)
         dept_p.paragraph_format.space_after = Pt(6)
@@ -197,14 +191,13 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
         run_dept.font.name = "Calibri"
         run_dept.font.size = Pt(14)
         run_dept.font.bold = True
-        run_dept.font.color.rgb = RGBColor(27, 54, 93) # Deep Navy
+        run_dept.font.color.rgb = RGBColor(27, 54, 93)
 
         categories = sorted(grouped[dept].keys())
         for c_idx, cat in enumerate(categories):
             letter = chr(65 + c_idx) if c_idx < 26 else f"C{c_idx+1}"
             records = grouped[dept][cat]
             
-            # Heading 2: Category
             cat_p = doc.add_paragraph()
             cat_p.paragraph_format.space_before = Pt(12)
             cat_p.paragraph_format.space_after = Pt(6)
@@ -215,12 +208,10 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
             run_cat.font.bold = True
             run_cat.font.color.rgb = RGBColor(50, 50, 50)
 
-            # Create Table for this Category
             table = doc.add_table(rows=1, cols=5)
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
             set_table_borders(table)
 
-            # Header Row
             hdr_row = table.rows[0]
             make_row_header(hdr_row)
             hdr_titles = ["#", "Issuance No.", "Title", "Date", "Source"]
@@ -234,7 +225,7 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
 
             for i, cell in enumerate(hdr_row.cells):
                 cell.width = col_widths[i]
-                set_cell_background(cell, "1B365D") # Navy blue header
+                set_cell_background(cell, "1B365D")
                 set_cell_margins(cell, top=100, bottom=100, left=100, right=100)
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
                 p = cell.paragraphs[0]
@@ -247,7 +238,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
                 run.font.bold = True
                 run.font.color.rgb = RGBColor(255, 255, 255)
 
-            # Data Rows
             for r_idx, rec in enumerate(records, start=1):
                 row = table.add_row()
                 make_row_cant_split(row)
@@ -265,7 +255,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
                     (pub_date, WD_ALIGN_PARAGRAPH.CENTER, False, Pt(8.5), RGBColor(80, 80, 80))
                 ]
 
-                # Populate columns 0 to 3
                 for col_idx in range(4):
                     cell = row.cells[col_idx]
                     cell.width = col_widths[col_idx]
@@ -283,7 +272,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
                     run.font.bold = bold
                     run.font.color.rgb = color
 
-                # Column 4: Source URL as clickable Hyperlink
                 cell_src = row.cells[4]
                 cell_src.width = col_widths[4]
                 set_cell_background(cell_src, row_bg)
@@ -302,7 +290,6 @@ def generate_word_document(issuances: List[Dict], filename: Optional[str] = None
                     run_none.font.size = Pt(8.5)
                     run_none.font.color.rgb = RGBColor(160, 160, 160)
 
-            # Spacing after category table
             doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
     doc.save(str(file_path))
