@@ -108,27 +108,104 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
 
-            // Resume button handling
-            const btnResume = document.getElementById("btn-resume");
-            const resumeHint = document.getElementById("resume-dept-hint");
+            // Resume UI handling - Always visible, dynamically updated
             const checkpoints = data.checkpoints || {};
             const interruptedDepts = (data.departments || []).filter(d => d.status === "Interrupted" || d.status === "Stopped");
-            const hasCheckpoints = Object.keys(checkpoints).length > 0 || interruptedDepts.length > 0;
-            const prog = data.progress;
+            const isRunning = prog && prog.is_running;
+            const deptCodeMap = {
+                "Department of Agriculture": "DA",
+                "Department of Health": "DOH",
+                "Department of Environment and Natural Resources": "DENR",
+                "Department of Education": "DepEd"
+            };
 
-            if (btnResume && prog && !prog.is_running && hasCheckpoints) {
-                btnResume.style.display = "inline-flex";
-                const firstDept = Object.keys(checkpoints)[0] || (interruptedDepts[0] ? interruptedDepts[0].department : "");
-                const cp = checkpoints[firstDept];
-                if (cp && cp.category) {
-                    resumeHint.textContent = `${firstDept.replace('Department of ', '')} - ${cp.category} p.${cp.page}`;
-                } else if (firstDept) {
-                    resumeHint.textContent = firstDept.replace('Department of ', '');
+            const resumableDeptNames = new Set([
+                ...Object.keys(checkpoints),
+                ...interruptedDepts.map(d => d.department)
+            ]);
+
+            // Update individual card resume buttons
+            Object.entries(deptCodeMap).forEach(([deptName, code]) => {
+                const btn = document.getElementById(`resume-btn-${code}`);
+                if (!btn) return;
+
+                btn.style.display = "inline-flex";
+                btn.disabled = isRunning;
+
+                const cp = checkpoints[deptName];
+                const isInterrupted = interruptedDepts.some(d => d.department === deptName);
+
+                if (cp && cp.page && cp.page > 1) {
+                    btn.className = "btn btn-sm btn-warning resume-single-btn";
+                    btn.textContent = `Resume ${code} (p.${cp.page}) ⏯️`;
+                    btn.title = `Resume ${deptName} from ${cp.category || 'checkpoint'} (Page ${cp.page})`;
+                } else if (cp && cp.category) {
+                    btn.className = "btn btn-sm btn-warning resume-single-btn";
+                    btn.textContent = `Resume ${code} (${cp.category}) ⏯️`;
+                    btn.title = `Resume ${deptName} from category: ${cp.category}`;
+                } else if (isInterrupted) {
+                    btn.className = "btn btn-sm btn-warning resume-single-btn";
+                    btn.textContent = `Resume ${code} ⏯️`;
+                    btn.title = `Resume ${deptName} from last stopped point`;
                 } else {
-                    resumeHint.textContent = "Interrupted Run";
+                    btn.className = "btn btn-sm btn-outline-warning resume-single-btn";
+                    btn.textContent = `Resume ${code} ⏯️`;
+                    btn.title = `Continue / Resume ${deptName}`;
                 }
-            } else if (btnResume) {
-                btnResume.style.display = "none";
+            });
+
+            // Update Global Resume Wrapper and Agency Selector
+            const resumeWrapper = document.getElementById("resume-wrapper");
+            const resumeAgencySelect = document.getElementById("resume-agency-select");
+            const btnResumeAction = document.getElementById("btn-resume");
+
+            if (resumeWrapper && resumeAgencySelect) {
+                resumeWrapper.style.display = "inline-flex";
+                if (btnResumeAction) btnResumeAction.disabled = isRunning;
+
+                const prevVal = resumeAgencySelect.value;
+                const options = [];
+
+                if (resumableDeptNames.size > 1) {
+                    options.push({ value: "all", label: "All Interrupted Agencies" });
+                }
+
+                Object.keys(deptCodeMap).forEach(dName => {
+                    const shortName = dName.replace("Department of ", "");
+                    const cp = checkpoints[dName];
+                    const isInterrupted = interruptedDepts.some(d => d.department === dName);
+                    let label = shortName;
+
+                    if (cp && cp.page && cp.page > 1) {
+                        label += ` (${cp.category ? cp.category + ' ' : ''}p.${cp.page} - Checkpoint)`;
+                    } else if (cp && cp.category) {
+                        label += ` (${cp.category} - Checkpoint)`;
+                    } else if (isInterrupted) {
+                        label += ` (Interrupted)`;
+                    } else {
+                        label += ` (Continue / Resume)`;
+                    }
+                    options.push({ value: dName, label: label });
+                });
+
+                const currentOptionsKey = options.map(o => `${o.value}:${o.label}`).join("|");
+                if (resumeAgencySelect.dataset.optionsKey !== currentOptionsKey) {
+                    resumeAgencySelect.innerHTML = "";
+                    options.forEach(opt => {
+                        const optEl = document.createElement("option");
+                        optEl.value = opt.value;
+                        optEl.textContent = opt.label;
+                        resumeAgencySelect.appendChild(optEl);
+                    });
+                    resumeAgencySelect.dataset.optionsKey = currentOptionsKey;
+
+                    const selectedRadio = document.querySelector('input[name="dept-select"]:checked');
+                    if (selectedRadio && options.some(o => o.value === selectedRadio.value)) {
+                        resumeAgencySelect.value = selectedRadio.value;
+                    } else if (prevVal && options.some(o => o.value === prevVal)) {
+                        resumeAgencySelect.value = prevVal;
+                    }
+                }
             }
 
             // Progress Banner handling
@@ -299,35 +376,81 @@ document.addEventListener("DOMContentLoaded", () => {
         triggerExtraction([selectedRadio.value]);
     });
 
+    async function resumeAgency(dept) {
+        const yearEl = document.getElementById("filter-year");
+        const maxPagesEl = document.getElementById("filter-max-pages");
+        const year = yearEl ? yearEl.value.trim() : "";
+        const maxPages = maxPagesEl ? maxPagesEl.value.trim() : "";
+
+        const payload = {
+            year: year,
+            max_pages: maxPages ? parseInt(maxPages, 10) : null
+        };
+        if (dept && dept !== "all") {
+            payload.department = dept;
+        }
+
+        try {
+            const res = await fetch("/api/resume", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || "Resuming extraction...");
+                pollStatus();
+            } else {
+                showToast(data.message || "Could not resume.", 4000);
+            }
+        } catch (err) {
+            showToast("Failed to resume extraction: " + err, 4000);
+        }
+    }
+
     const btnResumeAction = document.getElementById("btn-resume");
     if (btnResumeAction) {
         btnResumeAction.addEventListener("click", async () => {
             btnResumeAction.disabled = true;
             try {
-                const year = filterYear.value.trim();
-                const maxPages = filterMaxPages.value.trim();
-                const res = await fetch("/api/resume", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        year: year,
-                        max_pages: maxPages ? parseInt(maxPages, 10) : null
-                    })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(data.message || "Resuming extraction...");
-                    pollStatus();
-                } else {
-                    showToast(data.message || "Could not resume.", 4000);
-                }
-            } catch (err) {
-                showToast("Failed to resume extraction: " + err, 4000);
+                const agencySelect = document.getElementById("resume-agency-select");
+                const dept = agencySelect ? agencySelect.value : null;
+                await resumeAgency(dept);
             } finally {
                 btnResumeAction.disabled = false;
             }
         });
     }
+
+    // Individual Department Card "Resume [DEPT]" buttons
+    document.querySelectorAll(".resume-single-btn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            const dept = e.currentTarget.getAttribute("data-dept");
+            if (dept) {
+                e.currentTarget.disabled = true;
+                try {
+                    await resumeAgency(dept);
+                } finally {
+                    e.currentTarget.disabled = false;
+                }
+            }
+        });
+    });
+
+    // Auto-select in resume dropdown when a department radio button is selected
+    document.querySelectorAll('input[name="dept-select"]').forEach(radio => {
+        radio.addEventListener("change", () => {
+            const agencySelect = document.getElementById("resume-agency-select");
+            if (agencySelect) {
+                for (let i = 0; i < agencySelect.options.length; i++) {
+                    if (agencySelect.options[i].value === radio.value) {
+                        agencySelect.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        });
+    });
 
     document.querySelectorAll(".extract-single-btn").forEach(btn => {
         btn.addEventListener("click", (e) => {

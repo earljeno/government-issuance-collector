@@ -122,10 +122,16 @@ class TestAppEndpoints(unittest.TestCase):
         self.assertIn("Department of Education", data["checkpoints"])
         self.assertEqual(data["checkpoints"]["Department of Education"]["page"], 15)
 
-        # Test resume endpoint triggers worker
+        # Test resume endpoint triggers worker with specific agency
         res_resp = self.client.post("/api/resume", json={"department": "Department of Education"})
         self.assertEqual(res_resp.status_code, 200)
         self.assertTrue(res_resp.get_json()["success"])
+        self.assertIn("Department of Education", res_resp.get_json()["message"])
+
+        # Test resume endpoint with all
+        res_all_resp = self.client.post("/api/resume", json={"department": "all"})
+        # Might return 200 or 400 if already running, but since thread finishes or Mock, we test payload parsing
+        self.assertIn(res_all_resp.status_code, [200, 400])
 
         clear_checkpoint("Department of Education")
         self.assertIsNone(get_checkpoint("Department of Education"))

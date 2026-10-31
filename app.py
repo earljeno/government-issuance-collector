@@ -212,8 +212,8 @@ def resume_extraction():
     checkpoints = get_all_checkpoints()
     dept = data.get("department")
 
-    if dept:
-        selected_depts = [dept]
+    if dept and dept.strip().lower() != "all":
+        selected_depts = [dept.strip()]
     elif checkpoints:
         selected_depts = list(checkpoints.keys())
     else:
