@@ -57,12 +57,25 @@ class DepEdScraper(BaseScraper):
             if not base_cat_url:
                 continue
 
-            current_page_num = 1
+            visited_urls = set()
             cat_url = base_cat_url
             cat_records_count = 0
 
             while cat_url:
                 if cancel_event and cancel_event.is_set():
+                    break
+
+                if cat_url in visited_urls:
+                    logger.info(f"[DepEd] URL already visited ({cat_url}). Stopping pagination loop for {cat_name}.")
+                    break
+                visited_urls.add(cat_url)
+
+                curr_match = re.search(r"/page/(\d+)/?", cat_url)
+                current_page_num = int(curr_match.group(1)) if curr_match else 1
+
+                # Safety guard against infinite loops (DepEd categories max out under 500 pages)
+                if current_page_num > 600:
+                    logger.warning(f"[DepEd] Safety page limit (600) reached for {cat_name}. Stopping.")
                     break
 
                 self.report_progress(
@@ -92,6 +105,10 @@ class DepEdScraper(BaseScraper):
                     total_inserted += ins
                     total_duplicates += dups
                     cat_records_count += len(page_records)
+                else:
+                    # If page returned no records or is an empty/out-of-bounds page, end category
+                    logger.info(f"[DepEd] No issuance records found on page {current_page_num} for {cat_name}. Ending category.")
+                    break
 
                 # Pagination limit check if set
                 if max_pages_per_category and current_page_num >= max_pages_per_category:
@@ -100,7 +117,6 @@ class DepEdScraper(BaseScraper):
 
                 if next_url and next_url != cat_url:
                     cat_url = next_url
-                    current_page_num += 1
                 else:
                     logger.info(f"[DepEd] No further pages found for {cat_name} after page {current_page_num}.")
                     break
@@ -162,28 +178,41 @@ class DepEdScraper(BaseScraper):
             )
             records.append(record)
 
-        # Detect next page URL
+        # Detect next page URL (strictly forward pagination into older archives)
+        curr_match = re.search(r"/page/(\d+)/?", current_url)
+        curr_p = int(curr_match.group(1)) if curr_match else 1
         next_url = None
-        # Look for "Older posts" link or next pagination anchor
-        for a in soup.find_all("a", href=True):
-            text = a.get_text(strip=True).lower()
-            href = a["href"].strip()
-            if ("older" in text or "next" in text or "→" in text or "»" in text) and "/page/" in href:
-                next_url = urljoin(current_url, href)
-                break
 
-        # Fallback to standard /page/<n+1>/ link if not found above
+        # 1. Look for WordPress standard nav-previous container (which holds the older posts link)
+        nav_prev = soup.find("div", class_="nav-previous")
+        if nav_prev:
+            a_tag = nav_prev.find("a", href=True)
+            if a_tag and "/page/" in a_tag["href"]:
+                candidate = urljoin(current_url, a_tag["href"].strip())
+                cand_m = re.search(r"/page/(\d+)/?", candidate)
+                if cand_m and int(cand_m.group(1)) > curr_p:
+                    next_url = candidate
+
+        # 2. Look for an explicit 'older' link (never follow 'newer' links which point backward)
         if not next_url:
-            curr_match = re.search(r"/page/(\d+)/?", current_url)
-            if curr_match:
-                curr_page = int(curr_match.group(1))
-                candidate = re.sub(r"/page/\d+/?", f"/page/{curr_page + 1}/", current_url)
-                if soup.find("a", href=lambda h: h and candidate in h):
+            for a in soup.find_all("a", href=True):
+                text = a.get_text(strip=True).lower()
+                href = a["href"].strip()
+                if "older" in text and "newer" not in text and "/page/" in href:
+                    candidate = urljoin(current_url, href)
+                    cand_m = re.search(r"/page/(\d+)/?", candidate)
+                    if cand_m and int(cand_m.group(1)) > curr_p:
+                        next_url = candidate
+                        break
+
+        # 3. Fallback to standard /page/<curr_p + 1>/ candidate if explicitly present and not 'newer'
+        if not next_url:
+            candidate = re.sub(r"/page/\d+/?", f"/page/{curr_p + 1}/", current_url) if curr_match else current_url.rstrip("/") + "/page/2/"
+            for a in soup.find_all("a", href=lambda h: h and candidate in h):
+                text = a.get_text(strip=True).lower()
+                if "newer" not in text:
                     next_url = candidate
-            else:
-                candidate = current_url.rstrip("/") + "/page/2/"
-                if soup.find("a", href=lambda h: h and candidate in h):
-                    next_url = candidate
+                    break
 
         return records, next_url
 

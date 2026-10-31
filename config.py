@@ -3,8 +3,24 @@ from pathlib import Path
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE_PATH = BASE_DIR / "database" / "issuances.db"
-EXPORTS_DIR = BASE_DIR / "exports"
+
+# Persistent Data Directory (Separate from python code in database/ so Docker volume mounts don't mask db.py)
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data")))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Migrate legacy database/issuances.db to data/issuances.db if present
+legacy_db = BASE_DIR / "database" / "issuances.db"
+default_db = DATA_DIR / "issuances.db"
+if not default_db.exists() and legacy_db.exists():
+    try:
+        import shutil
+        shutil.copy2(legacy_db, default_db)
+    except Exception:
+        pass
+
+DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(default_db if default_db.exists() else legacy_db)))
+DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+EXPORTS_DIR = Path(os.environ.get("EXPORTS_DIR", str(BASE_DIR / "exports")))
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Application Settings

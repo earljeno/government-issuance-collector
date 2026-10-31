@@ -78,6 +78,13 @@ class TestScrapersAndApp(unittest.TestCase):
         self.assertIn("Reorganization of Division Field Offices", records_p2[0].title)
         self.assertIsNone(next_url_p2)
 
+    def test_deped_last_page_no_backward_loop(self):
+        html = '<nav id="nav-below"><div class="nav-next"><a href="https://www.deped.gov.ph/category/issuances/deped-advisories/page/453/">Newer posts</a></div></nav><article class="post"><h2><a href="#">DA 01</a></h2></article>'
+        scraper = DepEdScraper()
+        records, next_url = scraper._parse_page(html, "DepEd Advisories", "https://www.deped.gov.ph/category/issuances/deped-advisories/page/454/")
+        self.assertEqual(len(records), 1)
+        self.assertIsNone(next_url)
+
     def test_doh_parsing(self):
         """Verify DOH table parsing from HTML fixture."""
         html = (FIXTURES_DIR / "doh_health_policies.html").read_text(encoding="utf-8")

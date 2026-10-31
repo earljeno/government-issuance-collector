@@ -6,7 +6,7 @@ import threading
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
-from config import DEPARTMENTS, EXPORTS_DIR
+from config import DEPARTMENTS, EXPORTS_DIR, DATABASE_PATH
 from database.db import (
     init_db,
     get_all_department_statuses,
@@ -336,6 +336,30 @@ def export_file(fmt: str):
         as_attachment=as_attachment,
         download_name=os.path.basename(file_path)
     )
+
+@app.route("/api/backup-db", methods=["GET"])
+def backup_database():
+    """Allows downloading the raw SQLite database file directly."""
+    if not os.path.exists(DATABASE_PATH):
+        return jsonify({"error": "Database not initialized"}), 404
+    return send_file(
+        DATABASE_PATH,
+        mimetype="application/x-sqlite3",
+        as_attachment=True,
+        download_name="issuances.db"
+    )
+
+@app.route("/api/restore-db", methods=["POST"])
+def restore_database():
+    """Allows uploading and restoring a SQLite database file."""
+    if "file" not in request.files:
+        return jsonify({"success": False, "message": "No file uploaded"}), 400
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return jsonify({"success": False, "message": "No file selected"}), 400
+    
+    file.save(DATABASE_PATH)
+    return jsonify({"success": True, "message": "Database successfully restored."})
 
 if __name__ == "__main__":
     init_db()
