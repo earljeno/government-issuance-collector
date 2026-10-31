@@ -16,7 +16,10 @@ from database.db import (
     delete_all_issuances,
     remove_duplicates_cleanup,
     get_failed_pages,
-    save_issuances_batch
+    save_issuances_batch,
+    get_all_checkpoints,
+    get_checkpoint,
+    clear_checkpoint
 )
 from database.models import IssuanceRecord
 from scrapers.da import DAScraper
@@ -58,14 +61,14 @@ def progress_callback(update_data: dict):
         active_progress.update(update_data)
         active_progress["is_running"] = (update_data.get("status") == "Running")
 
-def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: str, max_pages: int = None):
+def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: str, max_pages: int = None, resume: bool = False):
     global cancel_event
     cancel_event.clear()
 
     with progress_lock:
         active_progress["is_running"] = True
         active_progress["status"] = "Running"
-        active_progress["message"] = f"Extraction started for {', '.join(selected_depts)}"
+        active_progress["message"] = f"{'Resuming' if resume else 'Starting'} extraction for {', '.join(selected_depts)}"
 
     scrapers = {
         "Department of Agriculture": DAScraper(),
@@ -93,14 +96,23 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
                         break
                 cats = list(DEPARTMENTS[dept_key]["categories"].keys()) if dept_key else None
 
-            logger.info(f"Starting worker for {dept_name}...")
+            logger.info(f"{'Resuming' if resume else 'Starting'} worker for {dept_name}...")
             if isinstance(scraper, DepEdScraper):
                 scraper.scrape(
                     categories=cats,
                     year=year_filter,
                     progress_callback=progress_callback,
                     cancel_event=cancel_event,
-                    max_pages_per_category=max_pages
+                    max_pages_per_category=max_pages,
+                    resume=resume
+                )
+            elif isinstance(scraper, DAScraper):
+                scraper.scrape(
+                    categories=cats,
+                    year=year_filter,
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event,
+                    resume=resume
                 )
             else:
                 scraper.scrape(
@@ -136,6 +148,7 @@ def get_status():
     dept_statuses = get_all_department_statuses()
     total_db_records = get_issuance_count()
     failed = get_failed_pages()
+    checkpoints = get_all_checkpoints()
     with progress_lock:
         curr_progress = dict(active_progress)
 
@@ -143,7 +156,8 @@ def get_status():
         "departments": dept_statuses,
         "total_records": total_db_records,
         "failed_pages_count": len(failed),
-        "progress": curr_progress
+        "progress": curr_progress,
+        "checkpoints": checkpoints
     })
 
 @app.route("/api/extract", methods=["POST"])
@@ -169,6 +183,7 @@ def start_extraction():
     cat_filters = data.get("categories", {})
     year_filter = data.get("year", "").strip() or None
     max_pages = data.get("max_pages")
+    resume = data.get("resume", False)
     if max_pages:
         try:
             max_pages = int(max_pages)
@@ -177,14 +192,56 @@ def start_extraction():
 
     t = threading.Thread(
         target=run_extraction_worker,
-        args=(selected_depts, cat_filters, year_filter, max_pages),
+        args=(selected_depts, cat_filters, year_filter, max_pages, resume),
         daemon=True
     )
     t.start()
 
     return jsonify({
         "success": True,
-        "message": f"Extraction started for {len(selected_depts)} department(s)."
+        "message": f"{'Resumed' if resume else 'Extraction started'} for {len(selected_depts)} department(s)."
+    })
+
+@app.route("/api/resume", methods=["POST"])
+def resume_extraction():
+    with progress_lock:
+        if active_progress["is_running"]:
+            return jsonify({"success": False, "message": "An extraction task is already in progress."}), 400
+
+    data = request.get_json() or {}
+    checkpoints = get_all_checkpoints()
+    dept = data.get("department")
+
+    if dept:
+        selected_depts = [dept]
+    elif checkpoints:
+        selected_depts = list(checkpoints.keys())
+    else:
+        # Fallback to interrupted or stopped departments in department_status
+        dept_statuses = get_all_department_statuses()
+        selected_depts = [d["department"] for d in dept_statuses if d.get("status") in ["Interrupted", "Stopped"]]
+
+    if not selected_depts:
+        return jsonify({"success": False, "message": "No stopped or interrupted department found to resume."}), 400
+
+    year_filter = data.get("year", "").strip() or None
+    max_pages = data.get("max_pages")
+    if max_pages:
+        try:
+            max_pages = int(max_pages)
+        except ValueError:
+            max_pages = None
+
+    t = threading.Thread(
+        target=run_extraction_worker,
+        args=(selected_depts, {}, year_filter, max_pages, True),
+        daemon=True
+    )
+    t.start()
+
+    return jsonify({
+        "success": True,
+        "message": f"Resuming extraction for {', '.join(selected_depts)} from saved checkpoint."
     })
 
 @app.route("/api/stop", methods=["POST"])

@@ -110,5 +110,30 @@ class TestAppEndpoints(unittest.TestCase):
         self.assertFalse(data["success"])
         self.assertIn("No records found", data["message"])
 
+    def test_checkpoint_and_resume_api(self):
+        from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
+        save_checkpoint("Department of Education", "DepEd Advisories", 15, "https://deped.gov.ph/page/15/")
+        
+        # Test status returns checkpoint
+        resp = self.client.get("/api/status")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("checkpoints", data)
+        self.assertIn("Department of Education", data["checkpoints"])
+        self.assertEqual(data["checkpoints"]["Department of Education"]["page"], 15)
+
+        # Test resume endpoint triggers worker
+        res_resp = self.client.post("/api/resume", json={"department": "Department of Education"})
+        self.assertEqual(res_resp.status_code, 200)
+        self.assertTrue(res_resp.get_json()["success"])
+
+        clear_checkpoint("Department of Education")
+        self.assertIsNone(get_checkpoint("Department of Education"))
+
+    def test_backup_db_endpoint(self):
+        resp = self.client.get("/api/backup-db")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("Content-Type"), "application/x-sqlite3")
+
 if __name__ == "__main__":
     unittest.main()

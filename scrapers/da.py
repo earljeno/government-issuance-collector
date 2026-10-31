@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
 from database.models import IssuanceRecord
+from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,16 @@ class DAScraper(BaseScraper):
         categories: Optional[List[str]] = None,
         year: Optional[str] = None,
         progress_callback: Optional[Callable] = None,
-        cancel_event: Optional[Event] = None
+        cancel_event: Optional[Event] = None,
+        resume: bool = False
     ) -> int:
         target_cats = categories if categories else list(self.categories_map.keys())
         total_inserted = 0
         total_duplicates = 0
+
+        # Load active checkpoint if resuming
+        checkpoint = get_checkpoint(self.department_name) if resume else None
+        completed_cats = set(checkpoint.get("completed_categories", [])) if checkpoint else set()
         
         self.report_progress(
             progress_callback=progress_callback,
@@ -35,12 +41,13 @@ class DAScraper(BaseScraper):
             total_pages=str(len(target_cats)),
             records_collected=0,
             status="Running",
-            message=f"Starting extraction for {len(target_cats)} categories"
+            message=f"Starting extraction for {len(target_cats)} categories" + (f" ({len(completed_cats)} already completed)" if resume and completed_cats else "")
         )
 
         for cat_idx, cat_name in enumerate(target_cats, start=1):
             if cancel_event and cancel_event.is_set():
                 logger.info("[DA] Extraction cancelled by user.")
+                save_checkpoint(self.department_name, cat_name, 1, "", list(completed_cats))
                 self.report_progress(
                     progress_callback=progress_callback,
                     category=cat_name,
@@ -52,9 +59,15 @@ class DAScraper(BaseScraper):
                 )
                 return total_inserted
 
+            if resume and cat_name in completed_cats:
+                logger.info(f"[DA] Skipping already completed category: {cat_name}")
+                continue
+
             cat_url = self.categories_map.get(cat_name)
             if not cat_url:
                 continue
+
+            save_checkpoint(self.department_name, cat_name, 1, cat_url, list(completed_cats))
 
             self.report_progress(
                 progress_callback=progress_callback,
@@ -81,6 +94,9 @@ class DAScraper(BaseScraper):
                 total_duplicates += dups
                 logger.info(f"[DA] {cat_name}: {len(records_in_cat)} extracted ({ins} new, {dups} duplicates)")
 
+            completed_cats.add(cat_name)
+            save_checkpoint(self.department_name, cat_name, 1, "", list(completed_cats))
+
             self.report_progress(
                 progress_callback=progress_callback,
                 category=cat_name,
@@ -90,6 +106,9 @@ class DAScraper(BaseScraper):
                 status="Running",
                 message=f"Completed category {cat_name}: {len(records_in_cat)} records found"
             )
+
+        if not cancel_event or not cancel_event.is_set():
+            clear_checkpoint(self.department_name)
 
         self.report_progress(
             progress_callback=progress_callback,

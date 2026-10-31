@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
 from database.models import IssuanceRecord
+from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,18 @@ class DepEdScraper(BaseScraper):
         year: Optional[str] = None,
         progress_callback: Optional[Callable] = None,
         cancel_event: Optional[Event] = None,
-        max_pages_per_category: Optional[int] = None
+        max_pages_per_category: Optional[int] = None,
+        resume: bool = False
     ) -> int:
         target_cats = categories if categories else list(self.categories_map.keys())
         total_inserted = 0
         total_duplicates = 0
+
+        # Load active checkpoint if resuming
+        checkpoint = get_checkpoint(self.department_name) if resume else None
+        completed_cats = set(checkpoint.get("completed_categories", [])) if checkpoint else set()
+        resume_cat = checkpoint.get("category") if checkpoint else None
+        resume_page = checkpoint.get("page", 1) if checkpoint else 1
 
         self.report_progress(
             progress_callback=progress_callback,
@@ -36,7 +44,7 @@ class DepEdScraper(BaseScraper):
             total_pages=str(len(target_cats)),
             records_collected=0,
             status="Running",
-            message=f"Starting DepEd extraction across {len(target_cats)} categories"
+            message=f"Starting DepEd extraction across {len(target_cats)} categories" + (f" (Resuming from {resume_cat} page {resume_page})" if resume and resume_cat else "")
         )
 
         for cat_idx, cat_name in enumerate(target_cats, start=1):
@@ -53,16 +61,29 @@ class DepEdScraper(BaseScraper):
                 )
                 return total_inserted
 
+            # Skip categories already completed in previous run
+            if resume and cat_name in completed_cats:
+                logger.info(f"[DepEd] Skipping already completed category: {cat_name}")
+                continue
+
             base_cat_url = self.categories_map.get(cat_name)
             if not base_cat_url:
                 continue
 
+            # Determine starting page
+            if resume and cat_name == resume_cat and resume_page > 1:
+                cat_url = f"{base_cat_url.rstrip('/')}/page/{resume_page}/"
+                logger.info(f"[DepEd] Resuming category {cat_name} from page {resume_page}: {cat_url}")
+                resume_cat = None  # Consumed checkpoint page
+            else:
+                cat_url = base_cat_url
+
             visited_urls = set()
-            cat_url = base_cat_url
             cat_records_count = 0
 
             while cat_url:
                 if cancel_event and cancel_event.is_set():
+                    save_checkpoint(self.department_name, cat_name, current_page_num, cat_url, list(completed_cats))
                     break
 
                 if cat_url in visited_urls:
@@ -77,6 +98,9 @@ class DepEdScraper(BaseScraper):
                 if current_page_num > 600:
                     logger.warning(f"[DepEd] Safety page limit (600) reached for {cat_name}. Stopping.")
                     break
+
+                # Save checkpoint before processing
+                save_checkpoint(self.department_name, cat_name, current_page_num, cat_url, list(completed_cats))
 
                 self.report_progress(
                     progress_callback=progress_callback,
@@ -120,6 +144,14 @@ class DepEdScraper(BaseScraper):
                 else:
                     logger.info(f"[DepEd] No further pages found for {cat_name} after page {current_page_num}.")
                     break
+
+            # Mark category completed in checkpoint
+            completed_cats.add(cat_name)
+            save_checkpoint(self.department_name, cat_name, 1, "", list(completed_cats))
+
+        # Clear checkpoint when entire run completes
+        if not cancel_event or not cancel_event.is_set():
+            clear_checkpoint(self.department_name)
 
         self.report_progress(
             progress_callback=progress_callback,

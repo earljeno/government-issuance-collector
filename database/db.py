@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import config
@@ -54,6 +55,26 @@ def init_db():
                 timestamp TEXT NOT NULL,
                 retry_count INTEGER DEFAULT 0
             )
+        """)
+
+        # Extraction checkpoints for resuming interrupted runs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS extraction_checkpoints (
+                department TEXT PRIMARY KEY,
+                category TEXT,
+                page INTEGER DEFAULT 1,
+                url TEXT,
+                completed_categories TEXT,
+                updated_at TEXT
+            )
+        """)
+
+        # Mark any abandoned 'Running' tasks as 'Interrupted' on server start
+        cursor.execute("""
+            UPDATE department_status
+            SET status = 'Interrupted',
+                error_message = 'Interrupted by server restart or shutdown. Click Resume to continue.'
+            WHERE status = 'Running'
         """)
         
         # Initialize default department statuses if not present
@@ -323,3 +344,65 @@ def remove_duplicates_cleanup() -> int:
         deleted = cursor.rowcount
         conn.commit()
     return deleted
+
+def save_checkpoint(
+    department: str,
+    category: str,
+    page: int = 1,
+    url: str = "",
+    completed_categories: Optional[List[str]] = None
+):
+    """Saves or updates progress checkpoint for seamless continuation."""
+    completed_json = json.dumps(completed_categories or [])
+    now_ts = datetime.now().isoformat()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO extraction_checkpoints (department, category, page, url, completed_categories, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(department) DO UPDATE SET
+                category = excluded.category,
+                page = excluded.page,
+                url = excluded.url,
+                completed_categories = excluded.completed_categories,
+                updated_at = excluded.updated_at
+        """, (department, category, page, url, completed_json, now_ts))
+        conn.commit()
+
+def get_checkpoint(department: str) -> Optional[Dict]:
+    """Retrieves active checkpoint for a department."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM extraction_checkpoints WHERE department = ?", (department,))
+        row = cursor.fetchone()
+        if row:
+            d = dict(row)
+            try:
+                d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
+            except Exception:
+                d["completed_categories"] = []
+            return d
+    return None
+
+def get_all_checkpoints() -> Dict[str, Dict]:
+    """Retrieves all active checkpoints across departments."""
+    results = {}
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM extraction_checkpoints")
+        for row in cursor.fetchall():
+            d = dict(row)
+            try:
+                d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
+            except Exception:
+                d["completed_categories"] = []
+            results[d["department"]] = d
+    return results
+
+def clear_checkpoint(department: str):
+    """Clears checkpoint upon successful completion of all categories."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM extraction_checkpoints WHERE department = ?", (department,))
+        conn.commit()
+

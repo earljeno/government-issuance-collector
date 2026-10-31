@@ -101,14 +101,37 @@ document.addEventListener("DOMContentLoaded", () => {
                     badgeEl.className = "dept-badge";
                     if (d.status === "Running") badgeEl.classList.add("badge-running");
                     else if (d.status === "Completed") badgeEl.classList.add("badge-completed");
+                    else if (d.status === "Interrupted" || d.status === "Stopped") badgeEl.classList.add("badge-inaccessible");
                     else if (d.status === "Temporarily Inaccessible") badgeEl.classList.add("badge-inaccessible");
                     else if (d.status === "Error") badgeEl.classList.add("badge-error");
                     else badgeEl.classList.add("badge-idle");
                 }
             }
 
-            // Progress Banner handling
+            // Resume button handling
+            const btnResume = document.getElementById("btn-resume");
+            const resumeHint = document.getElementById("resume-dept-hint");
+            const checkpoints = data.checkpoints || {};
+            const interruptedDepts = (data.departments || []).filter(d => d.status === "Interrupted" || d.status === "Stopped");
+            const hasCheckpoints = Object.keys(checkpoints).length > 0 || interruptedDepts.length > 0;
             const prog = data.progress;
+
+            if (btnResume && prog && !prog.is_running && hasCheckpoints) {
+                btnResume.style.display = "inline-flex";
+                const firstDept = Object.keys(checkpoints)[0] || (interruptedDepts[0] ? interruptedDepts[0].department : "");
+                const cp = checkpoints[firstDept];
+                if (cp && cp.category) {
+                    resumeHint.textContent = `${firstDept.replace('Department of ', '')} - ${cp.category} p.${cp.page}`;
+                } else if (firstDept) {
+                    resumeHint.textContent = firstDept.replace('Department of ', '');
+                } else {
+                    resumeHint.textContent = "Interrupted Run";
+                }
+            } else if (btnResume) {
+                btnResume.style.display = "none";
+            }
+
+            // Progress Banner handling
             if (prog && prog.is_running) {
                 progressCard.style.display = "block";
                 globalSystemStatus.textContent = "Running";
@@ -275,6 +298,36 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         triggerExtraction([selectedRadio.value]);
     });
+
+    const btnResumeAction = document.getElementById("btn-resume");
+    if (btnResumeAction) {
+        btnResumeAction.addEventListener("click", async () => {
+            btnResumeAction.disabled = true;
+            try {
+                const year = filterYear.value.trim();
+                const maxPages = filterMaxPages.value.trim();
+                const res = await fetch("/api/resume", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        year: year,
+                        max_pages: maxPages ? parseInt(maxPages, 10) : null
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message || "Resuming extraction...");
+                    pollStatus();
+                } else {
+                    showToast(data.message || "Could not resume.", 4000);
+                }
+            } catch (err) {
+                showToast("Failed to resume extraction: " + err, 4000);
+            } finally {
+                btnResumeAction.disabled = false;
+            }
+        });
+    }
 
     document.querySelectorAll(".extract-single-btn").forEach(btn => {
         btn.addEventListener("click", (e) => {
