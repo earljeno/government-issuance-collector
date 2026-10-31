@@ -22,6 +22,8 @@ venv.bak/
 *.sqlite
 *.sqlite3
 database/*.db
+data/*
+!data/.gitkeep
 
 # Generated export files and temporary downloads
 exports/*
