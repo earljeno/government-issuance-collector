@@ -378,6 +378,90 @@ class TestRefactoringFixes(unittest.TestCase):
         self.assertIn("Non-Academic URL", issue_types)
         self.assertIn("Missing Metadata", issue_types)
 
+    def test_deped_parallel_scraping(self):
+        """Verify DepEd scraper executes multiple categories concurrently via ThreadPoolExecutor."""
+        scraper = DepEdScraper()
+
+        def mock_fetch(url):
+            resp = MagicMock()
+            resp.status_code = 200
+            if "deped-orders" in url:
+                resp.text = """
+                <article class="post">
+                    <h2 class="entry-title"><a href="https://deped.gov.ph/2026/01/do-01/">January 1, 2026 DO 01, s. 2026 – Guidelines on School Calendar</a></h2>
+                </article>
+                """
+            elif "deped-memoranda" in url:
+                resp.text = """
+                <article class="post">
+                    <h2 class="entry-title"><a href="https://deped.gov.ph/2026/01/dm-01/">January 2, 2026 DM 01, s. 2026 – Administration of National Exam</a></h2>
+                </article>
+                """
+            else:
+                resp.status_code = 404
+                resp.text = ""
+            return resp
+
+        scraper.fetch_url = mock_fetch
+
+        inserted = scraper.scrape(
+            categories=["DepEd Orders", "DepEd Memoranda"],
+            max_pages_per_category=1
+        )
+        self.assertEqual(inserted, 2)
+
+    def test_deped_parallel_checkpoint_and_resume(self):
+        """Verify extraction_checkpoints saves category_pages and resumes completed/in-flight categories."""
+        from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
+        clear_checkpoint("Department of Education")
+
+        # Save checkpoint with completed category and in-flight category page
+        save_checkpoint(
+            department="Department of Education",
+            category="DepEd Orders",
+            page=5,
+            url="https://www.deped.gov.ph/category/issuances/deped-orders/page/5/",
+            completed_categories=["DepEd Memoranda"],
+            category_pages={"DepEd Orders": {"page": 5, "url": "https://www.deped.gov.ph/category/issuances/deped-orders/page/5/"}}
+        )
+
+        cp = get_checkpoint("Department of Education")
+        self.assertIsNotNone(cp)
+        self.assertEqual(cp["page"], 5)
+        self.assertIn("DepEd Memoranda", cp["completed_categories"])
+        self.assertIn("DepEd Orders", cp["category_pages"])
+        self.assertEqual(cp["category_pages"]["DepEd Orders"]["page"], 5)
+
+        # Test resume skips completed category and resumes in-flight
+        scraper = DepEdScraper()
+        fetched_urls = []
+
+        def mock_fetch(url):
+            fetched_urls.append(url)
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = """
+            <article class="post">
+                <h2 class="entry-title"><a href="https://deped.gov.ph/2026/01/do-05/">DO 05, s. 2026 – Policy From Page 5</a></h2>
+            </article>
+            """
+            return resp
+
+        scraper.fetch_url = mock_fetch
+
+        inserted = scraper.scrape(
+            categories=["DepEd Orders", "DepEd Memoranda"],
+            max_pages_per_category=5,
+            resume=True
+        )
+
+        # "DepEd Memoranda" was marked complete, so no URLs should contain "deped-memoranda"
+        self.assertFalse(any("deped-memoranda" in u for u in fetched_urls))
+        # "DepEd Orders" should have resumed directly from page 5
+        self.assertTrue(any("/page/5/" in u for u in fetched_urls))
+
+        clear_checkpoint("Department of Education")
+
 
 if __name__ == "__main__":
     unittest.main()

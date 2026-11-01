@@ -1,9 +1,12 @@
-import re
+import concurrent.futures
 import logging
-from typing import List, Optional, Callable, Tuple
+import re
+import threading
 from threading import Event
-from bs4 import BeautifulSoup
+from typing import Callable, List, Optional, Tuple
 from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
 
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
@@ -17,6 +20,9 @@ class DepEdScraper(BaseScraper):
         dept_cfg = DEPARTMENTS["DepEd"]
         super().__init__(dept_cfg["name"], dept_cfg["code"])
         self.categories_map = dept_cfg["categories"]
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def scrape(
         self,
@@ -25,65 +31,82 @@ class DepEdScraper(BaseScraper):
         progress_callback: Optional[Callable] = None,
         cancel_event: Optional[Event] = None,
         max_pages_per_category: Optional[int] = None,
-        resume: bool = False
+        resume: bool = False,
+        max_workers: int = 3
     ) -> int:
-        target_cats = categories if categories else list(self.categories_map.keys())
+        raw_cats = categories if categories else list(self.categories_map.keys())
+        target_cats = [c for c in raw_cats if c in self.categories_map]
         total_inserted = 0
         total_duplicates = 0
 
         # Load active checkpoint if resuming
         checkpoint = get_checkpoint(self.department_name) if resume else None
         completed_cats = set(checkpoint.get("completed_categories", [])) if checkpoint else set()
+        category_pages = dict(checkpoint.get("category_pages", {})) if checkpoint else {}
+
+        # Backward compatibility for legacy checkpoint with single active category
         resume_cat = checkpoint.get("category") if checkpoint else None
         resume_page = checkpoint.get("page", 1) if checkpoint else 1
+        if resume_cat and resume_cat not in category_pages and resume_cat not in completed_cats:
+            category_pages[resume_cat] = {"page": resume_page, "url": checkpoint.get("url", "")}
+
+        cats_to_run = [c for c in target_cats if not (resume and c in completed_cats)]
+        if not cats_to_run:
+            self.report_progress(
+                progress_callback=progress_callback,
+                category="All Categories",
+                current_page=len(target_cats),
+                total_pages=str(len(target_cats)),
+                records_collected=0,
+                status="Completed",
+                message="All requested categories were already completed in previous run."
+            )
+            return 0
 
         self.report_progress(
             progress_callback=progress_callback,
-            category="Initializing",
-            current_page=0,
+            category="Parallel Categories" if len(cats_to_run) > 1 else cats_to_run[0],
+            current_page=len(completed_cats),
             total_pages=str(len(target_cats)),
             records_collected=0,
             status="Running",
-            message=f"Starting DepEd extraction across {len(target_cats)} categories" + (f" (Resuming from {resume_cat} page {resume_page})" if resume and resume_cat else "")
+            message=f"Starting parallel DepEd extraction across {len(cats_to_run)} categories"
         )
 
-        for cat_idx, cat_name in enumerate(target_cats, start=1):
-            if cancel_event and cancel_event.is_set():
-                logger.info("[DepEd] Extraction cancelled by user.")
-                self.report_progress(
-                    progress_callback=progress_callback,
-                    category=cat_name,
-                    current_page=cat_idx,
-                    total_pages=str(len(target_cats)),
-                    records_collected=total_inserted,
-                    status="Stopped",
-                    message="Extraction stopped by user"
-                )
-                return total_inserted
+        checkpoint_lock = threading.Lock()
+        stats_lock = threading.Lock()
+        category_progress = {}
 
-            # Skip categories already completed in previous run
-            if resume and cat_name in completed_cats:
-                logger.info(f"[DepEd] Skipping already completed category: {cat_name}")
-                continue
-
+        def _scrape_single_category(cat_name: str):
+            nonlocal total_inserted, total_duplicates
             base_cat_url = self.categories_map.get(cat_name)
             if not base_cat_url:
-                continue
+                return
 
-            # Determine starting page
-            if resume and cat_name == resume_cat and resume_page > 1:
-                cat_url = f"{base_cat_url.rstrip('/')}/page/{resume_page}/"
-                logger.info(f"[DepEd] Resuming category {cat_name} from page {resume_page}: {cat_url}")
-                resume_cat = None  # Consumed checkpoint page
-            else:
-                cat_url = base_cat_url
+            # Determine starting page and URL
+            start_page = 1
+            start_url = base_cat_url
+            if resume and cat_name in category_pages:
+                saved = category_pages[cat_name]
+                start_page = saved.get("page", 1)
+                start_url = saved.get("url") or (f"{base_cat_url.rstrip('/')}/page/{start_page}/" if start_page > 1 else base_cat_url)
 
+            cat_url = start_url
             visited_urls = set()
-            cat_records_count = 0
+            current_page_num = start_page
 
             while cat_url:
                 if cancel_event and cancel_event.is_set():
-                    save_checkpoint(self.department_name, cat_name, current_page_num, cat_url, list(completed_cats))
+                    with checkpoint_lock:
+                        category_pages[cat_name] = {"page": current_page_num, "url": cat_url}
+                        save_checkpoint(
+                            self.department_name,
+                            cat_name,
+                            current_page_num,
+                            cat_url,
+                            list(completed_cats),
+                            category_pages=category_pages
+                        )
                     break
 
                 if cat_url in visited_urls:
@@ -92,24 +115,38 @@ class DepEdScraper(BaseScraper):
                 visited_urls.add(cat_url)
 
                 curr_match = re.search(r"/page/(\d+)/?", cat_url)
-                current_page_num = int(curr_match.group(1)) if curr_match else 1
+                current_page_num = int(curr_match.group(1)) if curr_match else current_page_num
 
-                # Safety guard against infinite loops (DepEd categories max out under 500 pages)
+                # Safety guard against infinite loops (DepEd categories max out under 600 pages)
                 if current_page_num > 600:
                     logger.warning(f"[DepEd] Safety page limit (600) reached for {cat_name}. Stopping.")
                     break
 
-                # Save checkpoint before processing
-                save_checkpoint(self.department_name, cat_name, current_page_num, cat_url, list(completed_cats))
+                with checkpoint_lock:
+                    category_pages[cat_name] = {"page": current_page_num, "url": cat_url}
+                    save_checkpoint(
+                        self.department_name,
+                        cat_name,
+                        current_page_num,
+                        cat_url,
+                        list(completed_cats),
+                        category_pages=category_pages
+                    )
+
+                with stats_lock:
+                    category_progress[cat_name] = f"p.{current_page_num}"
+                    summary_parts = [f"{c} ({category_progress[c]})" for c in sorted(category_progress.keys())]
+                    status_msg = f"Extracting: {', '.join(summary_parts)}"
+                    current_collected = total_inserted
 
                 self.report_progress(
                     progress_callback=progress_callback,
-                    category=cat_name,
-                    current_page=current_page_num,
-                    total_pages="Scanning...",
-                    records_collected=total_inserted,
+                    category="Parallel Categories" if len(cats_to_run) > 1 else cat_name,
+                    current_page=len(completed_cats),
+                    total_pages=str(len(target_cats)),
+                    records_collected=current_collected,
                     status="Running",
-                    message=f"Processing {cat_name} (Page {current_page_num})"
+                    message=status_msg
                 )
 
                 resp = self.fetch_url(cat_url)
@@ -126,15 +163,13 @@ class DepEdScraper(BaseScraper):
 
                 if page_records:
                     ins, dups = self.save_records(page_records)
-                    total_inserted += ins
-                    total_duplicates += dups
-                    cat_records_count += len(page_records)
+                    with stats_lock:
+                        total_inserted += ins
+                        total_duplicates += dups
                 else:
-                    # If page returned no records or is an empty/out-of-bounds page, end category
                     logger.info(f"[DepEd] No issuance records found on page {current_page_num} for {cat_name}. Ending category.")
                     break
 
-                # Pagination limit check if set
                 if max_pages_per_category and current_page_num >= max_pages_per_category:
                     logger.info(f"[DepEd] Reached max requested pages limit ({max_pages_per_category}) for {cat_name}.")
                     break
@@ -145,14 +180,46 @@ class DepEdScraper(BaseScraper):
                     logger.info(f"[DepEd] No further pages found for {cat_name} after page {current_page_num}.")
                     break
 
-            # Mark category completed in checkpoint
-            completed_cats.add(cat_name)
-            save_checkpoint(self.department_name, cat_name, 1, "", list(completed_cats))
+            if not cancel_event or not cancel_event.is_set():
+                with checkpoint_lock:
+                    completed_cats.add(cat_name)
+                    category_pages.pop(cat_name, None)
+                    save_checkpoint(
+                        self.department_name,
+                        cat_name,
+                        1,
+                        "",
+                        list(completed_cats),
+                        category_pages=category_pages
+                    )
+                with stats_lock:
+                    category_progress.pop(cat_name, None)
 
-        # Clear checkpoint when entire run completes
-        if not cancel_event or not cancel_event.is_set():
-            clear_checkpoint(self.department_name)
+        worker_count = min(max_workers, max(1, len(cats_to_run)))
+        logger.info(f"[DepEd] Spawning {worker_count} category worker thread(s) for: {cats_to_run}")
 
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(_scrape_single_category, cat): cat for cat in cats_to_run}
+            for future in concurrent.futures.as_completed(futures):
+                cat = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.exception(f"[DepEd] Exception in worker for category '{cat}': {exc}")
+
+        if cancel_event and cancel_event.is_set():
+            self.report_progress(
+                progress_callback=progress_callback,
+                category="Parallel Categories" if len(cats_to_run) > 1 else cats_to_run[0],
+                current_page=len(completed_cats),
+                total_pages=str(len(target_cats)),
+                records_collected=total_inserted,
+                status="Stopped",
+                message=f"Extraction stopped by user. {total_inserted} records saved."
+            )
+            return total_inserted
+
+        clear_checkpoint(self.department_name)
         self.report_progress(
             progress_callback=progress_callback,
             category="All Categories",

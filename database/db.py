@@ -67,9 +67,16 @@ def init_db():
                 page INTEGER DEFAULT 1,
                 url TEXT,
                 completed_categories TEXT,
-                updated_at TEXT
+                updated_at TEXT,
+                category_pages TEXT DEFAULT '{}'
             )
         """)
+
+        # Ensure category_pages column exists for upgrades
+        try:
+            cursor.execute("ALTER TABLE extraction_checkpoints ADD COLUMN category_pages TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass
 
         # Quarantine and manual review ledger table
         cursor.execute("""
@@ -369,23 +376,26 @@ def save_checkpoint(
     category: str,
     page: int = 1,
     url: str = "",
-    completed_categories: Optional[List[str]] = None
+    completed_categories: Optional[List[str]] = None,
+    category_pages: Optional[Dict] = None
 ):
     """Saves or updates progress checkpoint for seamless continuation."""
     completed_json = json.dumps(completed_categories or [])
+    category_pages_json = json.dumps(category_pages or {})
     now_ts = datetime.now().isoformat()
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO extraction_checkpoints (department, category, page, url, completed_categories, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO extraction_checkpoints (department, category, page, url, completed_categories, updated_at, category_pages)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(department) DO UPDATE SET
                 category = excluded.category,
                 page = excluded.page,
                 url = excluded.url,
                 completed_categories = excluded.completed_categories,
-                updated_at = excluded.updated_at
-        """, (department, category, page, url, completed_json, now_ts))
+                updated_at = excluded.updated_at,
+                category_pages = excluded.category_pages
+        """, (department, category, page, url, completed_json, now_ts, category_pages_json))
         conn.commit()
 
 def get_checkpoint(department: str) -> Optional[Dict]:
@@ -400,6 +410,10 @@ def get_checkpoint(department: str) -> Optional[Dict]:
                 d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
             except Exception:
                 d["completed_categories"] = []
+            try:
+                d["category_pages"] = json.loads(d.get("category_pages") or "{}")
+            except Exception:
+                d["category_pages"] = {}
             return d
     return None
 
@@ -415,6 +429,10 @@ def get_all_checkpoints() -> Dict[str, Dict]:
                 d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
             except Exception:
                 d["completed_categories"] = []
+            try:
+                d["category_pages"] = json.loads(d.get("category_pages") or "{}")
+            except Exception:
+                d["category_pages"] = {}
             results[d["department"]] = d
     return results
 
