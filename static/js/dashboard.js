@@ -76,6 +76,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const valPortalTbody = document.getElementById("val-portal-tbody");
     const valQuarantineTbody = document.getElementById("val-quarantine-tbody");
     const valQuarantineTabCount = document.getElementById("val-quarantine-tab-count");
+    const quarantineSearchInput = document.getElementById("quarantine-search-input");
+    const quarantineSearchClear = document.getElementById("quarantine-search-clear");
+    const quarantineFilterCount = document.getElementById("quarantine-filter-count");
+    let currentQuarantineLogs = [];
 
     // Toast helper
     function showToast(msg, duration = 3500) {
@@ -897,6 +901,194 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function extractSearchKeyword(log) {
+        const details = log.details || "";
+        // 1. Missing issuance number: <number>
+        const mNum = details.match(/Missing issuance number:\s*([^\s,;]+)/i);
+        if (mNum) {
+            return {
+                keyword: mNum[1].trim(),
+                fullQuery: `${log.category || ""} ${mNum[1].trim()}`.trim()
+            };
+        }
+        // 2. Doc ID: <id>
+        const mDoc = details.match(/Doc ID:\s*([^\s,;]+)/i);
+        if (mDoc) {
+            return {
+                keyword: `Doc ID ${mDoc[1].trim()}`,
+                fullQuery: `${log.category || ""} ${mDoc[1].trim()}`.trim()
+            };
+        }
+        // 3. Number pattern like 2026-0003 or plain number
+        const mCode = details.match(/\b(20\d{2}-\d{1,5}|\d{1,5})\b/);
+        if (mCode) {
+            return {
+                keyword: mCode[1].trim(),
+                fullQuery: `${log.category || ""} ${mCode[1].trim()}`.trim()
+            };
+        }
+        // 4. Default: category name or department
+        const fallback = (log.category || log.department || "Issuance").trim();
+        return {
+            keyword: fallback,
+            fullQuery: fallback
+        };
+    }
+
+    function buildGoogleSearchUrl(department, category, keyword, details) {
+        const agencyDomains = {
+            "Department of Health": "doh.gov.ph",
+            "Department of Agriculture": "da.gov.ph",
+            "Department of Education": "deped.gov.ph",
+            "Department of Environment and Natural Resources": "denr.gov.ph"
+        };
+        const domain = agencyDomains[department] || "gov.ph";
+
+        // Category singular cleaning
+        let cleanCat = (category || "").trim();
+        if (cleanCat.endsWith("s") && !cleanCat.endsWith("ies")) {
+            cleanCat = cleanCat.slice(0, -1);
+        } else if (cleanCat.endsWith("ies")) {
+            cleanCat = cleanCat.slice(0, -3) + "y";
+        }
+
+        const cleanNum = (keyword || "").replace(/^Doc ID\s*/i, "").trim();
+        const yearMatch = (details || "").match(/\b(20\d{2}|19\d{2})\b/) || cleanNum.match(/\b(20\d{2}|19\d{2})\b/);
+        const yearQuery = yearMatch ? `"${yearMatch[1]}"` : "";
+
+        // Build Google query with special operators:
+        // - site:domain OR site:officialgazette.gov.ph (restricts to verified government portals)
+        // - filetype:pdf (targets signed official issuance PDFs directly)
+        // - exact quotes for category and number
+        let queryParts = [
+            `site:${domain} OR site:officialgazette.gov.ph`,
+            `filetype:pdf`
+        ];
+        if (cleanCat) {
+            queryParts.push(`"${cleanCat}"`);
+        }
+        if (cleanNum) {
+            queryParts.push(`"${cleanNum}"`);
+        }
+        if (yearQuery && !cleanNum.includes(yearMatch[1])) {
+            queryParts.push(yearQuery);
+        }
+
+        return `https://www.google.com/search?q=${encodeURIComponent(queryParts.join(" "))}`;
+    }
+
+    function renderQuarantineTable(logs) {
+        if (!valQuarantineTbody) return;
+        valQuarantineTbody.innerHTML = "";
+
+        const query = (quarantineSearchInput ? quarantineSearchInput.value : "").trim().toLowerCase();
+        const filtered = query
+            ? logs.filter(log => {
+                const kwInfo = extractSearchKeyword(log);
+                const str = `${log.department} ${log.category} ${log.issue_type} ${log.details} ${kwInfo.keyword} ${kwInfo.fullQuery}`.toLowerCase();
+                return str.includes(query);
+            })
+            : logs;
+
+        if (quarantineFilterCount) {
+            if (query) {
+                quarantineFilterCount.textContent = `Showing ${filtered.length} of ${logs.length} logs`;
+            } else {
+                quarantineFilterCount.textContent = `${logs.length} pending items`;
+            }
+        }
+        if (quarantineSearchClear) {
+            quarantineSearchClear.style.display = query ? "inline-block" : "none";
+        }
+
+        if (filtered.length === 0) {
+            valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">${query ? "No quarantine records match your search." : "No pending quarantine records. All extractions meet provenance standards."}</td></tr>`;
+            return;
+        }
+
+        filtered.forEach(log => {
+            const tr = document.createElement("tr");
+            const kwInfo = extractSearchKeyword(log);
+            const googleSearchUrl = buildGoogleSearchUrl(log.department, log.category, kwInfo.keyword, log.details);
+
+            tr.innerHTML = `
+                <td style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); white-space: nowrap;">${log.created_at || "-"}</td>
+                <td><strong>${escapeHtml(log.department)}</strong><br><span style="font-size: 0.8rem; color: var(--text-muted, #94a3b8);">${escapeHtml(log.category)}</span></td>
+                <td><span class="badge-issue-type">${escapeHtml(log.issue_type)}</span></td>
+                <td style="font-size: 0.82rem; word-break: break-word;">${escapeHtml(log.details)}</td>
+                <td>
+                    <div class="search-ready-cell">
+                        <div class="drag-keyword-badge" draggable="true" title="Drag to any search input or click to copy" data-keyword="${escapeHtml(kwInfo.keyword)}" data-query="${escapeHtml(kwInfo.fullQuery)}">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="drag-grip-icon" aria-hidden="true"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                            <span class="keyword-text">${escapeHtml(kwInfo.keyword)}</span>
+                        </div>
+                        <a href="${googleSearchUrl}" target="_blank" rel="noopener noreferrer" class="btn-quick-portal" title="Search official PDF on ${escapeHtml(log.department)} & Official Gazette via Google">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <span>Google PDF</span>
+                        </a>
+                    </div>
+                </td>
+                <td style="text-align: center;">
+                    <div class="quarantine-actions">
+                        <button class="btn-paste-quarantine" data-id="${log.id}" data-dept="${escapeHtml(log.department)}" data-cat="${escapeHtml(log.category)}" data-url="${escapeHtml(log.source_url || '')}" data-details="${escapeHtml(log.details || '')}" type="button" title="Paste screen text & validate before saving">Paste & Review</button>
+                        <button class="btn-resolve-quarantine" data-id="${log.id}" data-action="Resolved" type="button" title="Mark as resolved">Mark Resolved</button>
+                        <button class="btn-ignore-quarantine" data-id="${log.id}" data-action="Ignored" type="button" title="Ignore this quarantine entry">Ignore</button>
+                    </div>
+                </td>
+            `;
+            valQuarantineTbody.appendChild(tr);
+        });
+
+        // Setup drag events on all keyword badges
+        valQuarantineTbody.querySelectorAll(".drag-keyword-badge").forEach(badge => {
+            badge.addEventListener("dragstart", (e) => {
+                const kw = badge.getAttribute("data-keyword");
+                const query = badge.getAttribute("data-query");
+                badge.classList.add("dragging");
+                e.dataTransfer.setData("text/plain", kw);
+                e.dataTransfer.setData("text/search-query", query);
+                e.dataTransfer.effectAllowed = "copyMove";
+            });
+
+            badge.addEventListener("dragend", () => {
+                badge.classList.remove("dragging");
+            });
+
+            // Click to copy
+            badge.addEventListener("click", () => {
+                const kw = badge.getAttribute("data-keyword");
+                navigator.clipboard.writeText(kw).then(() => {
+                    showToast(`Copied keyword: "${kw}"`);
+                }).catch(() => {
+                    showToast(`Keyword: ${kw}`);
+                });
+            });
+        });
+
+        // Paste & Review button
+        valQuarantineTbody.querySelectorAll(".btn-paste-quarantine").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const log = {
+                    id: btn.getAttribute("data-id"),
+                    department: btn.getAttribute("data-dept"),
+                    category: btn.getAttribute("data-cat"),
+                    source_url: btn.getAttribute("data-url"),
+                    details: btn.getAttribute("data-details")
+                };
+                openPasteModal(log);
+            });
+        });
+
+        // Resolve & Ignore buttons
+        valQuarantineTbody.querySelectorAll(".btn-resolve-quarantine, .btn-ignore-quarantine").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const id = e.target.getAttribute("data-id");
+                const action = e.target.getAttribute("data-action");
+                await resolveQuarantineItem(id, action);
+            });
+        });
+    }
+
     async function loadQuarantineLogs() {
         if (!valQuarantineTbody) return;
         try {
@@ -908,6 +1100,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const logs = data.logs || [];
+            currentQuarantineLogs = logs;
             const count = logs.length;
             if (quarantineBadge) {
                 quarantineBadge.textContent = count;
@@ -920,42 +1113,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 valDetectedGaps.textContent = count;
             }
 
-            valQuarantineTbody.innerHTML = "";
-            if (logs.length === 0) {
-                valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">No pending quarantine records. All extractions meet provenance standards.</td></tr>`;
-                return;
-            }
-
-            logs.forEach(log => {
-                const tr = document.createElement("tr");
-
-                const sourceHtml = log.source_url
-                    ? `<a href="${log.source_url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary, #38bdf8); text-decoration: underline; font-size: 0.8rem;">[Link]</a>`
-                    : `<span style="color: var(--text-muted, #94a3b8);">-</span>`;
-
-                tr.innerHTML = `
-                    <td style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); white-space: nowrap;">${log.created_at || "-"}</td>
-                    <td><strong>${escapeHtml(log.department)}</strong><br><span style="font-size: 0.8rem; color: var(--text-muted, #94a3b8);">${escapeHtml(log.category)}</span></td>
-                    <td><span class="badge-issue-type">${escapeHtml(log.issue_type)}</span></td>
-                    <td style="font-size: 0.82rem; word-break: break-word;">${escapeHtml(log.details)}</td>
-                    <td style="text-align: center;">${sourceHtml}</td>
-                    <td style="text-align: center;">
-                        <div class="quarantine-actions">
-                            <button class="btn-resolve-quarantine" data-id="${log.id}" data-action="Resolved" type="button" title="Mark as resolved">Mark Resolved</button>
-                            <button class="btn-ignore-quarantine" data-id="${log.id}" data-action="Ignored" type="button" title="Ignore this quarantine entry">Ignore</button>
-                        </div>
-                    </td>
-                `;
-                valQuarantineTbody.appendChild(tr);
-            });
-
-            valQuarantineTbody.querySelectorAll(".btn-resolve-quarantine, .btn-ignore-quarantine").forEach(btn => {
-                btn.addEventListener("click", async (e) => {
-                    const id = e.target.getAttribute("data-id");
-                    const action = e.target.getAttribute("data-action");
-                    await resolveQuarantineItem(id, action);
-                });
-            });
+            renderQuarantineTable(currentQuarantineLogs);
 
         } catch (err) {
             valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">Error loading quarantine: ${err.message}</td></tr>`;
@@ -1078,6 +1236,304 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnReconcileBackfill.disabled = false;
                 btnReconcileBackfill.textContent = "Reconcile & Backfill Missing";
                 alert("Error during reconciliation: " + err.message);
+            }
+        });
+    }
+
+    // Quarantine Search Input & Drag-and-Drop Handlers
+    if (quarantineSearchInput) {
+        quarantineSearchInput.addEventListener("input", () => {
+            renderQuarantineTable(currentQuarantineLogs);
+        });
+
+        quarantineSearchInput.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            quarantineSearchInput.classList.add("drop-active");
+        });
+
+        quarantineSearchInput.addEventListener("dragleave", () => {
+            quarantineSearchInput.classList.remove("drop-active");
+        });
+
+        quarantineSearchInput.addEventListener("drop", (e) => {
+            e.preventDefault();
+            quarantineSearchInput.classList.remove("drop-active");
+            const droppedText = e.dataTransfer.getData("text/plain");
+            if (droppedText) {
+                quarantineSearchInput.value = droppedText;
+                renderQuarantineTable(currentQuarantineLogs);
+                quarantineSearchInput.focus();
+                showToast(`Filtered quarantine by: "${droppedText}"`);
+            }
+        });
+    }
+
+    if (quarantineSearchClear) {
+        quarantineSearchClear.addEventListener("click", () => {
+            if (quarantineSearchInput) {
+                quarantineSearchInput.value = "";
+                renderQuarantineTable(currentQuarantineLogs);
+                quarantineSearchInput.focus();
+            }
+        });
+    }
+
+    // Enable drag & drop target on Main Database table search input
+    const tableSearchInput = document.getElementById("table-search");
+    if (tableSearchInput) {
+        tableSearchInput.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            tableSearchInput.style.borderColor = "var(--border-focus, #1d4ed8)";
+        });
+
+        tableSearchInput.addEventListener("dragleave", () => {
+            tableSearchInput.style.borderColor = "";
+        });
+
+        tableSearchInput.addEventListener("drop", (e) => {
+            e.preventDefault();
+            tableSearchInput.style.borderColor = "";
+            const droppedText = e.dataTransfer.getData("text/plain");
+            if (droppedText) {
+                tableSearchInput.value = droppedText;
+                currentPage = 1;
+                loadRecords();
+                tableSearchInput.focus();
+                showToast(`Searching database for: "${droppedText}"`);
+            }
+        });
+    }
+
+    // Modal: Paste & Validate Quarantine Resolution Logic
+    const modalPasteResolve = document.getElementById("modal-paste-resolve");
+    const modalPasteClose = document.getElementById("modal-paste-close");
+    const btnPasteCancel = document.getElementById("btn-paste-cancel");
+    const pasteQuarantineId = document.getElementById("paste-quarantine-id");
+    const pasteDeptInput = document.getElementById("paste-dept-input");
+    const pasteCatInput = document.getElementById("paste-cat-input");
+    const pasteUrlInput = document.getElementById("paste-url-input");
+    const pasteOpenUrlBtn = document.getElementById("paste-open-url-btn");
+    const pasteScreenText = document.getElementById("paste-screen-text");
+    const btnParseScreenText = document.getElementById("btn-parse-screen-text");
+    const btnClearPasteText = document.getElementById("btn-clear-paste-text");
+    const pasteParseStatus = document.getElementById("paste-parse-status");
+    const pasteValidationSection = document.getElementById("paste-validation-section");
+    const pasteRecordCount = document.getElementById("paste-record-count");
+    const btnAddPreviewRow = document.getElementById("btn-add-preview-row");
+    const pastePreviewTbody = document.getElementById("paste-preview-tbody");
+    const btnPasteConfirmSave = document.getElementById("btn-paste-confirm-save");
+    const pasteSaveResult = document.getElementById("paste-save-result");
+    const pasteModalSubtitle = document.getElementById("paste-modal-subtitle");
+
+    function openPasteModal(log) {
+        if (!modalPasteResolve) return;
+        pasteQuarantineId.value = log.id || "";
+        pasteDeptInput.value = log.department || "";
+        pasteCatInput.value = log.category || "";
+        pasteUrlInput.value = log.source_url || "";
+
+        if (log.source_url && log.source_url.startsWith("http")) {
+            pasteOpenUrlBtn.href = log.source_url;
+            pasteOpenUrlBtn.style.display = "inline";
+        } else {
+            pasteOpenUrlBtn.style.display = "none";
+        }
+
+        if (pasteModalSubtitle) {
+            pasteModalSubtitle.textContent = `Resolving Log #${log.id} • ${log.department} (${log.category}) • ${log.details || ""}`;
+        }
+
+        pasteScreenText.value = "";
+        pasteParseStatus.textContent = "";
+        pasteSaveResult.textContent = "";
+        pastePreviewTbody.innerHTML = "";
+        pasteValidationSection.style.display = "none";
+        btnPasteConfirmSave.disabled = true;
+
+        modalPasteResolve.style.display = "flex";
+        setTimeout(() => pasteScreenText.focus(), 50);
+    }
+
+    function closePasteModal() {
+        if (modalPasteResolve) {
+            modalPasteResolve.style.display = "none";
+        }
+    }
+
+    function updatePreviewRowCount() {
+        if (!pastePreviewTbody) return;
+        const rows = pastePreviewTbody.querySelectorAll("tr");
+        if (pasteRecordCount) pasteRecordCount.textContent = rows.length;
+        if (btnPasteConfirmSave) btnPasteConfirmSave.disabled = (rows.length === 0);
+    }
+
+    function addEditablePreviewRow(rec = {}) {
+        if (!pastePreviewTbody) return;
+        const tr = document.createElement("tr");
+        const defaultUrl = pasteUrlInput ? pasteUrlInput.value.trim() : "";
+        tr.innerHTML = `
+            <td>
+                <input type="text" class="paste-cell-input preview-field-num" value="${escapeHtml(rec.issuance_number || "")}" placeholder="e.g. 2026-0014">
+            </td>
+            <td>
+                <input type="text" class="paste-cell-input preview-field-title" value="${escapeHtml(rec.title || "")}" placeholder="Issuance Title / Subject">
+            </td>
+            <td>
+                <input type="text" class="paste-cell-input preview-field-date" value="${escapeHtml(rec.publication_date || "")}" placeholder="YYYY-MM-DD">
+            </td>
+            <td>
+                <input type="url" class="paste-cell-input preview-field-url" value="${escapeHtml(rec.source_url || defaultUrl)}" placeholder="https://...">
+            </td>
+            <td style="text-align: center;">
+                <button type="button" class="btn-del-preview-row" title="Remove this record">&times;</button>
+            </td>
+        `;
+        tr.querySelector(".btn-del-preview-row").addEventListener("click", () => {
+            tr.remove();
+            updatePreviewRowCount();
+        });
+        pastePreviewTbody.appendChild(tr);
+        updatePreviewRowCount();
+    }
+
+    if (modalPasteClose) modalPasteClose.addEventListener("click", closePasteModal);
+    if (btnPasteCancel) btnPasteCancel.addEventListener("click", closePasteModal);
+    if (btnClearPasteText) {
+        btnClearPasteText.addEventListener("click", () => {
+            pasteScreenText.value = "";
+            pasteScreenText.focus();
+        });
+    }
+
+    if (btnAddPreviewRow) {
+        btnAddPreviewRow.addEventListener("click", () => {
+            addEditablePreviewRow();
+        });
+    }
+
+    if (btnParseScreenText) {
+        btnParseScreenText.addEventListener("click", async () => {
+            const rawText = pasteScreenText.value.trim();
+            if (!rawText) {
+                showToast("Please paste copied screen text or table first.");
+                pasteScreenText.focus();
+                return;
+            }
+
+            btnParseScreenText.disabled = true;
+            btnParseScreenText.textContent = "Parsing text...";
+            pasteParseStatus.textContent = "Analyzing structure...";
+
+            try {
+                const res = await fetch("/api/manual-url/preview", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        html: rawText,
+                        url: pasteUrlInput.value.trim(),
+                        department: pasteDeptInput.value.trim(),
+                        category: pasteCatInput.value.trim()
+                    })
+                });
+                const data = await res.json();
+                btnParseScreenText.disabled = false;
+                btnParseScreenText.textContent = "Parse & Preview Records";
+
+                pastePreviewTbody.innerHTML = "";
+                const records = data.records || [];
+
+                if (records.length > 0) {
+                    records.forEach(r => addEditablePreviewRow(r));
+                    pasteValidationSection.style.display = "block";
+                    pasteParseStatus.textContent = `Extracted ${records.length} record(s) via ${data.structure || "text heuristics"}.`;
+                    pasteParseStatus.style.color = "var(--status-success-text, #15803d)";
+                } else {
+                    addEditablePreviewRow({
+                        issuance_number: "",
+                        title: rawText.split("\n")[0].substring(0, 100),
+                        publication_date: "",
+                        source_url: pasteUrlInput.value.trim()
+                    });
+                    pasteValidationSection.style.display = "block";
+                    pasteParseStatus.textContent = "A template row was created below. Please check the fields.";
+                    pasteParseStatus.style.color = "var(--status-warning-text, #b45309)";
+                }
+            } catch (err) {
+                btnParseScreenText.disabled = false;
+                btnParseScreenText.textContent = "Parse & Preview Records";
+                pasteParseStatus.textContent = "Error parsing text: " + err.message;
+                pasteParseStatus.style.color = "var(--status-danger-text, #b91c1c)";
+            }
+        });
+    }
+
+    if (btnPasteConfirmSave) {
+        btnPasteConfirmSave.addEventListener("click", async () => {
+            const rows = pastePreviewTbody.querySelectorAll("tr");
+            if (rows.length === 0) {
+                showToast("No records to save.");
+                return;
+            }
+
+            const dept = pasteDeptInput.value.trim() || "Manual Import";
+            const cat = pasteCatInput.value.trim() || "General Issuances";
+            const recordsToSave = [];
+
+            for (const r of rows) {
+                const num = r.querySelector(".preview-field-num").value.trim();
+                const title = r.querySelector(".preview-field-title").value.trim();
+                const date = r.querySelector(".preview-field-date").value.trim();
+                const url = r.querySelector(".preview-field-url").value.trim();
+
+                if (!title && !num) continue;
+                recordsToSave.push({
+                    department: dept,
+                    category: cat,
+                    issuance_number: num,
+                    title: title || num,
+                    publication_date: date,
+                    source_url: url
+                });
+            }
+
+            if (recordsToSave.length === 0) {
+                showToast("Every record must have at least an Issuance Number or Title.");
+                return;
+            }
+
+            btnPasteConfirmSave.disabled = true;
+            btnPasteConfirmSave.textContent = "Saving to Database...";
+
+            try {
+                const res = await fetch("/api/manual-url/save", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        records: recordsToSave,
+                        quarantine_id: pasteQuarantineId.value || null
+                    })
+                });
+                const data = await res.json();
+                btnPasteConfirmSave.disabled = false;
+                btnPasteConfirmSave.textContent = "Confirm & Save to Database";
+
+                if (data.success) {
+                    showToast(data.message || `Saved ${recordsToSave.length} record(s) and resolved quarantine!`);
+                    closePasteModal();
+                    loadQuarantineLogs();
+                    fetchQuarantineSummary();
+                    loadRecords();
+                } else {
+                    pasteSaveResult.textContent = "Save failed: " + (data.message || "Unknown error");
+                    pasteSaveResult.style.color = "var(--status-danger-text, #b91c1c)";
+                }
+            } catch (err) {
+                btnPasteConfirmSave.disabled = false;
+                btnPasteConfirmSave.textContent = "Confirm & Save to Database";
+                pasteSaveResult.textContent = "Error saving: " + err.message;
+                pasteSaveResult.style.color = "var(--status-danger-text, #b91c1c)";
             }
         });
     }

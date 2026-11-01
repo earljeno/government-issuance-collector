@@ -42,6 +42,23 @@ MONTH_OCR_CORRECTIONS = [
     (r"\bdecemb\b", "December"),
 ]
 
+# Cross-cutting national instruments promulgated by Malacañang or Congress.
+# Departments only selectively archive relevant national issuances, so non-contiguous
+# numbering is expected and natural. These must not trigger false-positive sequence gap alarms.
+NATIONAL_CROSS_CUTTING_CATEGORIES = {
+    "Executive Orders",
+    "Executive Order",
+    "Republic Acts",
+    "Republic Act",
+    "Republic Acts and Proclamations",
+    "Presidential Decrees",
+    "Presidential Decree",
+    "Commonwealth Acts",
+    "Commonwealth Act",
+    "Batas Pambansa",
+    "Proclamations",
+}
+
 
 def sanitize_publication_date(raw_date: Optional[str]) -> str:
     """
@@ -169,6 +186,11 @@ def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]
     for row in rows:
         dept = row.department
         cat = row.category
+
+        # Skip cross-cutting national issuances (EOs, RAs, PDs) as departments only selectively archive them
+        if cat in NATIONAL_CROSS_CUTTING_CATEGORIES or any(cat.strip().lower() == c.lower() for c in NATIONAL_CROSS_CUTTING_CATEGORIES):
+            continue
+
         num = str(row.issuance_number).strip()
         pub_date = str(row.publication_date or "")
 
@@ -395,10 +417,13 @@ def run_full_validation() -> Dict[str, Any]:
     }
 
 
-def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int:
+def backfill_missing_doh_records(gap_samples: Optional[List[Any]] = None) -> int:
     """
-    Reconciles missing records from the DOH API.
-    Queries by specific issuance number or backfills recent publications.
+    Reconciles missing records from the DOH API using the official search endpoint
+    (https://app.doh.gov.ph:1024/Rest/SearchDocuments -> Rest/GetFirstPage).
+    
+    Searches for specific missing issuance numbers by category/issuanceType,
+    and also probes recent publications across DOH categories.
     """
     from scrapers.doh import DOHScraper
     scraper = DOHScraper()
@@ -407,7 +432,8 @@ def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int
         return 0
 
     inserted_total = 0
-    # Probe each category for latest records
+
+    # 1. Probe each category for latest records (Page 1)
     for cat_name, cat_code in DEPARTMENTS["DOH"]["categories"].items():
         if scraper._search_documents(cat_code):
             items, _ = scraper._fetch_page(1, cat_code)
@@ -416,22 +442,61 @@ def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int
                 ins, _ = scraper.save_records(records)
                 inserted_total += ins
 
-    # If specific missing issuance numbers were provided, search directly
+    # 2. Build target missing items list (category, issuance_number, year)
+    targets = []
     if gap_samples:
-        for missing_num in gap_samples:
-            url = f"{scraper.base_url}/Rest/SearchDocuments"
-            scraper.session.post(url, data={
-                "docDateFrom": "",
-                "docDateTo": "",
-                "issuanceNumber": str(missing_num),
-                "issuanceType": "",
-                "keywords": "",
-                "subject": ""
-            }, timeout=REQUEST_TIMEOUT_SECONDS)
-            items, _ = scraper._fetch_page(1, "")
-            if items:
-                records = [r for item in items if (r := scraper._item_to_record(item, item.get("issuanceType") or "General")) is not None]
-                ins, _ = scraper.save_records(records)
-                inserted_total += ins
+        for item in gap_samples:
+            if isinstance(item, dict):
+                cat = item.get("category")
+                yr = item.get("year")
+                num = item.get("issuance_number") or item.get("number")
+                if num:
+                    targets.append((cat, str(num), yr))
+                elif item.get("missing_samples"):
+                    for s in item.get("missing_samples"):
+                        targets.append((cat, str(s), yr))
+            elif isinstance(item, (str, int)):
+                targets.append((None, str(item), None))
+    else:
+        # Automatically gather detected sequence gaps for Department of Health
+        dept_name = DEPARTMENTS["DOH"]["name"]
+        gaps = audit_sequence_gaps(department=dept_name)
+        for g in gaps:
+            cat = g.get("category")
+            yr = g.get("year")
+            for sample_num in g.get("missing_samples", [])[:10]:
+                targets.append((cat, str(sample_num), yr))
+
+    # 3. Query missing items via SearchDocuments and GetFirstPage
+    seen_targets = set()
+    unique_targets = []
+    for cat, num, yr in targets:
+        key = (cat, num)
+        if key not in seen_targets:
+            seen_targets.add(key)
+            unique_targets.append((cat, num, yr))
+
+    # Search candidates for each missing number (cap to 50 items to keep requests within reasonable duration)
+    for cat_name, missing_num, yr in unique_targets[:50]:
+        search_candidates = [missing_num]
+        if missing_num.isdigit():
+            search_candidates.append(f"{int(missing_num):04d}")
+            if yr:
+                search_candidates.append(f"{yr}-{int(missing_num):04d}")
+
+        found_records = []
+        for candidate in search_candidates:
+            recs = scraper.search_missing_issuance(
+                issuance_number=candidate,
+                cat_name=cat_name,
+                year=str(yr) if yr else None
+            )
+            if recs:
+                found_records.extend(recs)
+                break
+
+        if found_records:
+            ins, _ = scraper.save_records(found_records)
+            inserted_total += ins
 
     return inserted_total

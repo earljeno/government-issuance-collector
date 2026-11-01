@@ -42,6 +42,24 @@ class TestValidator(unittest.TestCase):
         self.assertEqual(gaps[0]["missing_count"], 1)
         self.assertIn(3, gaps[0]["missing_samples"])
 
+    def test_audit_sequence_gaps_skips_national_instruments(self):
+        # National cross-cutting instruments (EOs, RAs, PDs) must not trigger false positive gaps
+        records = [
+            IssuanceRecord(department="Department of Environment and Natural Resources", category="Executive Orders", issuance_number="2026-0001", title="EO 1", publication_date="2026-01-01"),
+            IssuanceRecord(department="Department of Environment and Natural Resources", category="Executive Orders", issuance_number="2026-0002", title="EO 2", publication_date="2026-01-02"),
+            IssuanceRecord(department="Department of Environment and Natural Resources", category="Executive Orders", issuance_number="2026-0020", title="EO 20", publication_date="2026-01-20"),
+            IssuanceRecord(department="Department of Agriculture", category="Republic Acts and Proclamations", issuance_number="2026-0001", title="RA 1", publication_date="2026-01-01"),
+            IssuanceRecord(department="Department of Agriculture", category="Republic Acts and Proclamations", issuance_number="2026-0050", title="RA 50", publication_date="2026-01-10"),
+        ]
+        for r in records:
+            save_issuance(r)
+
+        gaps_denr = audit_sequence_gaps(department="Department of Environment and Natural Resources")
+        self.assertEqual(len(gaps_denr), 0)
+
+        gaps_da = audit_sequence_gaps(department="Department of Agriculture")
+        self.assertEqual(len(gaps_da), 0)
+
     @patch("database.validator.audit_live_portal_sync")
     def test_run_full_validation(self, mock_portal_sync):
         mock_portal_sync.return_value = [{"department": "Department of Agriculture", "code": "DA", "portal_status": "Reachable", "categories": []}]
@@ -92,6 +110,36 @@ class TestValidator(unittest.TestCase):
         data = resp.get_json()
         self.assertFalse(data["success"])
         self.assertIn("disabled in production", data["error"])
+
+    @patch("scrapers.doh.DOHScraper._fetch_page")
+    @patch("scrapers.doh.DOHScraper._ensure_session", return_value=True)
+    def test_doh_search_missing_issuance(self, mock_session, mock_fetch):
+        from scrapers.doh import DOHScraper
+        scraper = DOHScraper()
+        mock_fetch.return_value = ([{
+            "documentId": 12345,
+            "issuanceNumber": "132",
+            "issuanceType": "Executive Order",
+            "subject": "Authorizing Poro Point Mgt Corp",
+            "documentDate": "2011-04-18T00:00:00+08:00"
+        }], True)
+
+        with patch.object(scraper.session, "post") as mock_post:
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"success": True}
+            mock_post.return_value = mock_resp
+
+            records = scraper.search_missing_issuance("132", cat_name="Executive Orders")
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0].issuance_number, "132")
+            self.assertEqual(records[0].category, "Executive Orders")
+
+            # Check that SearchDocuments was called with issuanceNumber and issuanceType
+            call_args = mock_post.call_args[1]
+            data = call_args["data"]
+            self.assertEqual(data["issuanceNumber"], "132")
+            self.assertEqual(data["issuanceType"], "KMITS_AISEO")
 
 
 if __name__ == "__main__":

@@ -166,6 +166,42 @@ class TestScrapersAndApp(unittest.TestCase):
         self.assertEqual(res["total_found"], 3)
         self.assertEqual(res["records"][0]["issuance_number"], "AO No. 27")
 
+    def test_manual_screen_paste_extractor(self):
+        """Verify screen-copied plain text extraction with tab and line separation."""
+        extractor = ManualURLExtractor()
+
+        # 1. Tab-separated text (table copy from screen)
+        tab_text = (
+            "2026-0014\tGuidelines on Clinic Accreditation\tJanuary 15, 2026\thttps://doh.gov.ph/ao2026-0014.pdf\n"
+            "2026-0015\tAmendments to Licensing Fees\tJanuary 20, 2026\thttps://doh.gov.ph/ao2026-0015.pdf"
+        )
+        res_tab = extractor.analyze_and_extract(
+            html_content=tab_text,
+            department_name="Department of Health",
+            category_name="Administrative Orders"
+        )
+        self.assertTrue(res_tab["success"])
+        self.assertEqual(res_tab["total_found"], 2)
+        self.assertEqual(res_tab["records"][0]["issuance_number"], "2026-0014")
+        self.assertEqual(res_tab["records"][0]["publication_date"], "2026-01-15")
+
+        # 2. Multi-line block text (card/list copy from screen)
+        block_text = (
+            "Executive Order No. 132\n"
+            "Authorizing the Creation of Poro Point Mgt. Corp.\n"
+            "April 18, 2011\n"
+            "https://app.doh.gov.ph:1024/Rest/GetFile?id=471895"
+        )
+        res_block = extractor.analyze_and_extract(
+            html_content=block_text,
+            department_name="Department of Health",
+            category_name="Executive Orders"
+        )
+        self.assertTrue(res_block["success"])
+        self.assertGreaterEqual(res_block["total_found"], 1)
+        self.assertIn("132", res_block["records"][0]["issuance_number"])
+        self.assertEqual(res_block["records"][0]["publication_date"], "2011-04-18")
+
     def test_database_duplicates_and_scrubbing(self):
         """Verify duplicate prevention and duplicate cleanup."""
         rec1 = IssuanceRecord(

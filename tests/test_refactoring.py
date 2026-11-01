@@ -354,6 +354,38 @@ class TestRefactoringFixes(unittest.TestCase):
             not_found_res = client.post("/api/quarantine/999999/resolve", json={"status": "Resolved"})
             self.assertEqual(not_found_res.status_code, 404)
 
+    def test_manual_save_with_quarantine_resolution(self):
+        """Verify POST /api/manual-url/save resolves quarantine log when quarantine_id is passed."""
+        clear_quarantine_logs()
+        log_id = log_quarantine(
+            department="Department of Health",
+            category="Executive Orders",
+            issue_type="Sequence Gap",
+            details="Missing issuance number: 132",
+            source_url=""
+        )
+
+        with app.test_client() as client:
+            res = client.post("/api/manual-url/save", json={
+                "quarantine_id": log_id,
+                "records": [{
+                    "department": "Department of Health",
+                    "category": "Executive Orders",
+                    "issuance_number": "132",
+                    "title": "Authorizing Creation of Poro Point",
+                    "publication_date": "2011-04-18",
+                    "source_url": "https://app.doh.gov.ph:1024/Rest/GetFile?id=471895"
+                }]
+            })
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertTrue(data["success"])
+            self.assertTrue(data["quarantine_resolved"])
+
+            # Verify quarantine log is now resolved
+            pending_res = client.get("/api/quarantine?status=Pending")
+            self.assertEqual(pending_res.get_json()["count"], 0)
+
     def test_scraper_quarantine_on_missing_metadata_and_provenance(self):
         """Verify scrapers log quarantine records when skipping invalid rows or detecting non-academic URLs."""
         clear_quarantine_logs()

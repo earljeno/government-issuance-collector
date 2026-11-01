@@ -629,22 +629,130 @@
                 </div>
 
                 <!-- Panel 2: Quarantine & Manual Review Table -->
-                <div id="panel-quarantine-logs" class="table-responsive" style="display: none; max-height: 380px; overflow-y: auto;">
-                    <table class="data-table" id="val-quarantine-table">
-                        <thead>
-                            <tr>
-                                <th scope="col" style="width: 140px;">Date Logged</th>
-                                <th scope="col" style="width: 180px;">Agency & Category</th>
-                                <th scope="col" style="width: 140px;">Issue Type</th>
-                                <th scope="col">Details</th>
-                                <th scope="col" style="width: 90px; text-align: center;">Source Link</th>
-                                <th scope="col" style="width: 170px; text-align: center;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="val-quarantine-tbody">
-                            <tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">No pending quarantine records. All extractions meet provenance standards.</td></tr>
-                        </tbody>
-                    </table>
+                <div id="panel-quarantine-logs" style="display: none;">
+                    <!-- Quarantine Search & Drag-Drop Filter Bar -->
+                    <div class="quarantine-search-bar" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap;">
+                        <div style="position: relative; flex: 1; min-width: 260px;">
+                            <input type="text" id="quarantine-search-input" class="form-control" placeholder="Search quarantine or drag & drop keyword here..." style="font-size: 0.82rem; padding: 6px 12px 6px 32px; width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--bg-card); color: var(--text-primary);" aria-label="Search or drop quarantine keywords">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        </div>
+                        <button id="quarantine-search-clear" class="btn btn-sm btn-outline" type="button" style="display: none; padding: 5px 10px; font-size: 0.78rem;">Clear Filter</button>
+                        <span id="quarantine-filter-count" style="font-size: 0.8rem; color: var(--text-muted); margin-left: auto;"></span>
+                    </div>
+
+                    <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                        <table class="data-table" id="val-quarantine-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" style="width: 130px;">Date Logged</th>
+                                    <th scope="col" style="width: 170px;">Agency & Category</th>
+                                    <th scope="col" style="width: 130px;">Issue Type</th>
+                                    <th scope="col">Details</th>
+                                    <th scope="col" style="width: 180px;">Search Ready</th>
+                                    <th scope="col" style="width: 230px; text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="val-quarantine-tbody">
+                                <tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">No pending quarantine records. All extractions meet provenance standards.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Paste & Validate Quarantine Resolution -->
+    <div id="modal-paste-resolve" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-paste-title">
+        <div class="modal-dialog modal-dialog-lg" style="max-width: 960px;">
+            <header class="modal-header">
+                <div>
+                    <h3 id="modal-paste-title" class="modal-title">Paste Screen Content & Validate</h3>
+                    <p class="modal-desc" id="paste-modal-subtitle" style="margin: 4px 0 0; font-size: 0.85rem; color: var(--text-muted, #94a3b8);">
+                        Copy the raw table or text directly from the site screen, paste below, and verify parsed records before saving.
+                    </p>
+                </div>
+                <button class="modal-close" id="modal-paste-close" type="button" aria-label="Close dialog">&times;</button>
+            </header>
+
+            <div class="modal-body">
+                <input type="hidden" id="paste-quarantine-id" value="">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="paste-dept-input" class="field-label">Agency / Department:</label>
+                        <input type="text" id="paste-dept-input" class="form-input" placeholder="e.g. Department of Health">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="paste-cat-input" class="field-label">Category:</label>
+                        <input type="text" id="paste-cat-input" class="form-input" placeholder="e.g. Executive Orders">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label for="paste-url-input" class="field-label" style="margin-bottom: 0;">Source Page URL:</label>
+                        <a id="paste-open-url-btn" href="#" target="_blank" rel="noopener noreferrer" style="font-size: 0.78rem; color: var(--primary, #38bdf8); text-decoration: underline; display: none;">Open Portal Page ↗</a>
+                    </div>
+                    <input type="url" id="paste-url-input" class="form-input" placeholder="https://agency.gov.ph/issuances/...">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label for="paste-screen-text" class="field-label" style="margin-bottom: 0;">Raw Screen Text / Table Paste (Ctrl+V):</label>
+                        <span style="font-size: 0.75rem; color: var(--text-muted, #94a3b8);">Supports table copy, tab-separated, or line-separated text</span>
+                    </div>
+                    <textarea id="paste-screen-text" class="form-textarea" rows="5" placeholder="Select whatever you see on the screen (table or lines), copy it, and paste it here..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 16px;">
+                    <button id="btn-parse-screen-text" class="btn btn-primary btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <span>Parse & Preview Records</span>
+                    </button>
+                    <button id="btn-clear-paste-text" class="btn btn-outline btn-sm" type="button">Clear Text</button>
+                    <span id="paste-parse-status" style="font-size: 0.8rem; color: var(--text-muted, #94a3b8);"></span>
+                </div>
+
+                <!-- Staged Records Verification Table -->
+                <div id="paste-validation-section" style="display: none; border-top: 1px solid var(--border-default, #cbd5e1); padding-top: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h4 style="font-size: 0.9rem; font-weight: 600; margin: 0; color: var(--text-primary, #0f172a);">
+                            Step 2: Inspect & Validate Extracted Fields (<span id="paste-record-count">0</span> records)
+                        </h4>
+                        <button id="btn-add-preview-row" class="btn btn-sm btn-outline" type="button" style="padding: 3px 8px; font-size: 0.75rem;">+ Add Row</button>
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text-muted, #94a3b8); margin: 0 0 10px;">
+                        Verify or edit each field below before committing to the database. All edits are saved directly.
+                    </p>
+
+                    <div class="table-responsive" style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-default, #cbd5e1); border-radius: var(--radius-sm, 4px);">
+                        <table class="data-table" id="paste-preview-table" style="font-size: 0.8rem; width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 130px;">Issuance No.</th>
+                                    <th>Title / Subject (Required)</th>
+                                    <th style="width: 120px;">Date (YYYY-MM-DD)</th>
+                                    <th style="width: 160px;">Source / PDF URL</th>
+                                    <th style="width: 50px; text-align: center;">Del</th>
+                                </tr>
+                            </thead>
+                            <tbody id="paste-preview-tbody">
+                                <!-- Dynamically generated editable rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="modal-action-row" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <span id="paste-save-result" style="font-size: 0.85rem; font-weight: 500;"></span>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="btn-paste-cancel" class="btn btn-outline btn-sm" type="button">Cancel</button>
+                        <button id="btn-paste-confirm-save" class="btn btn-success btn-sm" type="button" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span>Confirm & Save to Database</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

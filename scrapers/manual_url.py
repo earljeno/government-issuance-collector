@@ -80,6 +80,10 @@ class ManualURLExtractor:
         if not records:
             records, struct_name = self._extract_from_links(soup, base_url, department_name, category_name)
 
+        # Attempt 4: Plain Text / Screen Copy Heuristic Detection
+        if not records and html_content:
+            records, struct_name = self._extract_from_plain_text(html_content, base_url, department_name, category_name)
+
         return {
             "success": True,
             "structure": struct_name,
@@ -237,4 +241,112 @@ class ManualURLExtractor:
                 ))
         if records:
             return records, f"Hyperlink Document Listing ({len(records)} links detected)"
+        return [], "None"
+
+    def _extract_from_plain_text(self, text: str, base_url: str, dept: str, cat: str) -> Tuple[List[IssuanceRecord], str]:
+        """
+        Parses unformatted or formatted text copied directly from a screen/table.
+        Supports tab-separated clipboard tables, multi-line blocks, and line streams.
+        """
+        from database.validator import sanitize_publication_date
+        records: List[IssuanceRecord] = []
+        clean_text = text.strip()
+        if not clean_text:
+            return [], "None"
+
+        default_url = base_url if (base_url and base_url != "https://official.gov.ph") else ""
+
+        # Case 1: Tab-separated table copy
+        lines = [ln.strip() for ln in clean_text.splitlines() if ln.strip()]
+        if any("\t" in ln for ln in lines):
+            for ln in lines:
+                parts = [p.strip() for p in ln.split("\t") if p.strip()]
+                if not parts:
+                    continue
+                # Skip header row if all parts look like column headers
+                if any(h in parts[0].upper() for h in ["NUMBER", "NO.", "SERIES", "ISSUANCE"]) and any(h in "".join(parts).upper() for h in ["TITLE", "SUBJECT", "DATE"]):
+                    continue
+
+                num = ""
+                title = ""
+                date = ""
+                src = default_url
+
+                for part in parts:
+                    if part.startswith("http://") or part.startswith("https://"):
+                        src = part
+                    elif not date and re.search(r"\b(20\d{2}-\d{2}-\d{2}|[A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})\b", part):
+                        date = sanitize_publication_date(part)
+                    elif not num and (re.search(r"\b(20\d{2}-\d{1,5}|\d{1,5})\b", part) or any(k in part.upper() for k in ["AO", "DO", "DC", "MC", "EO", "RA", "NO."])):
+                        num = part
+                    elif not title:
+                        title = part
+                    else:
+                        title += f" - {part}"
+
+                if title or num:
+                    records.append(IssuanceRecord(
+                        department=dept,
+                        category=cat,
+                        issuance_number=num,
+                        title=title or num,
+                        publication_date=date,
+                        source_url=src
+                    ))
+            if records:
+                return records, f"Tab-Separated Screen Table ({len(records)} records detected)"
+
+        # Case 2: Multi-line and line-stream smart grouping
+        def is_url(s: str) -> bool:
+            return s.startswith("http://") or s.startswith("https://")
+
+        def is_date(s: str) -> bool:
+            return bool(re.search(r"\b([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})\b", s))
+
+        def is_num(s: str) -> bool:
+            return bool(re.search(r"\b((?:Executive Order|Administrative Order|Department Circular|Memorandum Circular|Republic Act|AO|DO|DC|MC|EO|RA|SO|JAO|JMC)\s*(?:No\.?)?\s*[\d-]+|\b20\d{2}-\d{1,5}\b|^\d{1,4}$)\b", s, re.IGNORECASE))
+
+        curr_num = ""
+        curr_title = ""
+        curr_date = ""
+        curr_url = default_url
+
+        for ln in lines:
+            if is_url(ln):
+                curr_url = ln
+            elif is_date(ln) and not curr_date:
+                curr_date = sanitize_publication_date(ln)
+            elif is_num(ln) and not curr_num:
+                curr_num = ln
+            elif not curr_title:
+                curr_title = ln
+            else:
+                if is_num(ln) or (curr_title and curr_date):
+                    records.append(IssuanceRecord(
+                        department=dept,
+                        category=cat,
+                        issuance_number=curr_num,
+                        title=curr_title or curr_num,
+                        publication_date=curr_date,
+                        source_url=curr_url
+                    ))
+                    curr_num = ln if is_num(ln) else ""
+                    curr_title = "" if is_num(ln) else ln
+                    curr_date = ""
+                    curr_url = default_url
+                else:
+                    curr_title += f" {ln}"
+
+        if curr_title or curr_num:
+            records.append(IssuanceRecord(
+                department=dept,
+                category=cat,
+                issuance_number=curr_num,
+                title=curr_title or curr_num,
+                publication_date=curr_date,
+                source_url=curr_url
+            ))
+
+        if records:
+            return records, f"Screen Text Stream ({len(records)} records detected)"
         return [], "None"

@@ -146,12 +146,81 @@ class DOHScraper(BaseScraper):
 
         return [], True
 
+    def search_missing_issuance(
+        self,
+        issuance_number: str,
+        cat_name: Optional[str] = None,
+        cat_code: Optional[str] = None,
+        year: Optional[str] = None,
+    ) -> List[IssuanceRecord]:
+        """
+        Directly queries the DOH portal SearchDocuments endpoint for a missing issuance number
+        and issuance type, and fetches matching documents via GetFirstPage.
+        """
+        if not self._ensure_session():
+            logger.warning("[DOH] Cannot search missing issuance: session could not be established.")
+            return []
+
+        type_code = cat_code or (DOH_PROPERTY_SETS.get(cat_name) if cat_name else "") or ""
+        target_cat = cat_name
+
+        payload = {
+            "docDateFrom": "",
+            "docDateTo": "",
+            "issuanceNumber": str(issuance_number).strip(),
+            "issuanceType": type_code,
+            "keywords": "",
+            "subject": "",
+        }
+
+        url = f"{self.base_url}/Rest/SearchDocuments"
+        try:
+            resp = self.session.post(url, data=payload, timeout=REQUEST_TIMEOUT_SECONDS)
+            if resp.status_code != 200:
+                logger.warning("[DOH] SearchDocuments HTTP %s for issuanceNumber=%s", resp.status_code, issuance_number)
+                return []
+            res_json = resp.json()
+            if not res_json.get("success"):
+                logger.warning("[DOH] SearchDocuments unsuccessful for issuanceNumber=%s: %s", issuance_number, res_json.get("error"))
+                return []
+
+            items, _ = self._fetch_page(1, type_code, year)
+            if not items:
+                return []
+
+            records = []
+            for item in items:
+                raw_type = item.get("issuanceType") or ""
+                normalized_cat = target_cat
+                if not normalized_cat:
+                    for c_name, c_code in self.categories_map.items():
+                        if c_code == type_code or c_name.lower().startswith(raw_type.lower()) or raw_type.lower() in c_name.lower():
+                            normalized_cat = c_name
+                            break
+                normalized_cat = normalized_cat or cat_name or raw_type or "General Issuances"
+
+                rec = self._item_to_record(item, normalized_cat)
+                if rec:
+                    records.append(rec)
+            return records
+        except Exception as exc:
+            logger.exception("[DOH] Error querying missing issuance (%s, %s): %s", issuance_number, type_code, exc)
+            return []
+
     def _item_to_record(self, item: dict, cat_name: str) -> Optional[IssuanceRecord]:
         """Convert a DOH JSON item to an IssuanceRecord."""
         doc_id = item.get("documentId")
         doc_type = item.get("issuanceType") or cat_name
         doc_num = (item.get("issuanceNumber") or "").strip()
         subject = (item.get("subject") or "").strip()
+
+        # Parse publication date and apply boundary checks
+        raw_date = (
+            item.get("publishedDate")
+            or item.get("documentDate")
+            or item.get("dateCreated")
+            or ""
+        )
 
         if not subject:
             fallback = f"{doc_type} {doc_num}".strip()
@@ -161,14 +230,6 @@ class DOHScraper(BaseScraper):
             details = f"DOH record lacks subject and issuance number. Doc ID: {doc_id}, Type: {doc_type}, Date: {raw_date}"
             log_quarantine(self.department_name, cat_name, "Missing Metadata", details, f"{self.base_url}/Rest/GetFile?id={doc_id}" if doc_id else "")
             return None
-
-        # Parse publication date and apply boundary checks
-        raw_date = (
-            item.get("publishedDate")
-            or item.get("documentDate")
-            or item.get("dateCreated")
-            or ""
-        )
         pub_date = ""
         if raw_date:
             raw_str = str(raw_date).strip()

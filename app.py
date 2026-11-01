@@ -483,10 +483,19 @@ def manual_url_save():
         ))
 
     ins, dups = save_issuances_batch(record_objs)
+
+    quarantine_id = data.get("quarantine_id")
+    if quarantine_id:
+        try:
+            resolve_quarantine_log(int(quarantine_id), "Resolved")
+        except Exception as q_err:
+            logger.warning("Could not auto-resolve quarantine log %s: %s", quarantine_id, q_err)
+
     return jsonify({
         "success": True,
         "inserted": ins,
         "duplicates": dups,
+        "quarantine_resolved": bool(quarantine_id),
         "message": f"Successfully saved {ins} records ({dups} duplicates skipped)."
     })
 
