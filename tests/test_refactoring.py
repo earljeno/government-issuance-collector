@@ -19,9 +19,12 @@ from database.validator import sanitize_publication_date
 from database.db import log_quarantine, get_quarantine_logs, resolve_quarantine_log, clear_quarantine_logs
 from exporters.word_exporter import add_hyperlink, generate_word_document
 from app import app
+from pin_gateway import set_access_pin
 
 
 class TestRefactoringFixes(unittest.TestCase):
+    def setUp(self):
+        set_access_pin("")
 
     def test_config_deped_orders_url(self):
         """Action 1: DepEd Orders URL must point to standard taxonomy archive."""

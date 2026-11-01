@@ -40,6 +40,7 @@ class TestPinGateway(unittest.TestCase):
 
     def tearDown(self):
         reset_gateway_state()
+        set_access_pin(None)
 
     def test_incorrect_pin_returns_401(self):
         response = self.client.post("/api/auth/pin", json={"pin": "000000"})
@@ -142,6 +143,42 @@ class TestPinGateway(unittest.TestCase):
         # /login is accessible without authentication
         login_resp = self.client.get("/login")
         self.assertEqual(login_resp.status_code, 200)
+
+    def test_legal_routes_exempt_and_accessible_without_auth(self):
+        # /terms is accessible without authentication
+        terms_resp = self.client.get("/terms")
+        self.assertEqual(terms_resp.status_code, 200)
+        self.assertIn(b"Terms of Service", terms_resp.data)
+
+        # /privacy is accessible without authentication
+        privacy_resp = self.client.get("/privacy")
+        self.assertEqual(privacy_resp.status_code, 200)
+        self.assertIn(b"Privacy Policy", privacy_resp.data)
+
+        # /legal redirects to /terms
+        legal_resp = self.client.get("/legal")
+        self.assertEqual(legal_resp.status_code, 302)
+        self.assertIn("/terms", legal_resp.headers.get("Location"))
+
+    def test_pin_verification_requires_terms_acceptance(self):
+        # Attempting to submit with terms_agreed=False returns 400
+        res_disagreed = self.client.post("/api/auth/pin", json={
+            "pin": self.test_pin,
+            "terms_agreed": False
+        })
+        self.assertEqual(res_disagreed.status_code, 400)
+        data = res_disagreed.get_json()
+        self.assertIn("agree to the Terms of Service and Privacy Policy", data.get("error", ""))
+        self.assertIsNone(get_active_session_token())
+
+        # Submitting with terms_agreed=True succeeds
+        res_agreed = self.client.post("/api/auth/pin", json={
+            "pin": self.test_pin,
+            "terms_agreed": True
+        })
+        self.assertEqual(res_agreed.status_code, 200)
+        self.assertTrue(res_agreed.get_json().get("success"))
+        self.assertIsNotNone(get_active_session_token())
 
     def test_logout(self):
         self.client.post("/api/auth/pin", json={"pin": self.test_pin})

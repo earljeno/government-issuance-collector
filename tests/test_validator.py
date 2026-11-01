@@ -16,11 +16,13 @@ from app import app
 from database.db import init_db, save_issuance, delete_all_issuances
 from database.models import IssuanceRecord
 from database.validator import audit_sequence_gaps, run_full_validation
+from pin_gateway import set_access_pin
 
 
 class TestValidator(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        set_access_pin("")
         init_db()
         cls.client = app.test_client()
 

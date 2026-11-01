@@ -10,10 +10,12 @@ config.DATABASE_URI = os.environ.get(
 
 from app import app
 from database.db import init_db, get_issuance_count
+from pin_gateway import set_access_pin
 
 class TestAppEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        set_access_pin("")
         init_db()
 
     def setUp(self):

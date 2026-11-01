@@ -57,6 +57,10 @@ NATIONAL_CROSS_CUTTING_CATEGORIES = {
     "Commonwealth Act",
     "Batas Pambansa",
     "Proclamations",
+    "Joint Memorandum Circulars",
+    "Joint Memorandum Circular",
+    "Memorandum Circulars",
+    "Memorandum Circular",
 }
 
 

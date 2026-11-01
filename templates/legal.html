@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} | Philippine Government Issuance Title Collector</title>
+  <style>
+    :root {
+      --brand-navy: #0d233a;
+      --brand-navy-light: #16375c;
+      --brand-blue: #1d4ed8;
+      --bg-page: #f1f5f9;
+      --bg-card: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #64748b;
+      --border-default: #cbd5e1;
+      --border-focus: #0d233a;
+      --radius: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-primary);
+      line-height: 1.6;
+      padding: 1.5rem 1rem 3rem 1rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .legal-nav-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--brand-navy);
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+      text-decoration: none;
+      min-height: 44px;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .btn-back:hover {
+      background-color: #f8fafc;
+      border-color: var(--brand-navy-light);
+    }
+
+    .btn-back:focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 2px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .tab-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+      text-decoration: none;
+      min-height: 44px;
+      transition: all 0.15s ease;
+    }
+
+    .tab-link:hover {
+      color: var(--brand-navy);
+      border-color: var(--brand-navy);
+    }
+
+    .tab-link.active {
+      color: #ffffff;
+      background-color: var(--brand-navy);
+      border-color: var(--brand-navy);
+    }
+
+    .tab-link:focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 2px;
+    }
+
+    .legal-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+      padding: 2.5rem 2rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+
+    .legal-header {
+      border-bottom: 2px solid var(--border-default);
+      padding-bottom: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--brand-navy);
+      background-color: #e2e8f0;
+      padding: 0.25rem 0.65rem;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--brand-navy);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+
+    .meta-date {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .legal-body h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--brand-navy);
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 0.35rem;
+    }
+
+    .legal-body h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .legal-body p {
+      margin-bottom: 1rem;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .legal-body ul, .legal-body ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1.25rem;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .legal-body li {
+      margin-bottom: 0.4rem;
+    }
+
+    .legal-body blockquote {
+      border-left: 4px solid var(--brand-navy);
+      background-color: #f8fafc;
+      padding: 0.85rem 1.15rem;
+      margin: 1.25rem 0;
+      font-style: italic;
+      color: var(--text-primary);
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin: 1.25rem 0;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f8fafc;
+      color: var(--brand-navy);
+      font-weight: 700;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #e2e8f0;
+      color: var(--text-secondary);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .notice-box {
+      background-color: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      color: #1e3a8a;
+      font-size: 0.9rem;
+    }
+
+    .notice-box strong {
+      color: #172554;
+    }
+
+    a {
+      color: var(--brand-blue);
+      text-decoration: underline;
+    }
+
+    a:hover {
+      color: var(--brand-navy);
+    }
+
+    .legal-footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    @media print {
+      body {
+        background-color: #ffffff;
+        padding: 0;
+      }
+      .legal-nav-bar, .legal-footer {
+        display: none;
+      }
+      .legal-card {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header class="legal-nav-bar" role="banner">
+      <a href="/login" class="btn-back" aria-label="Return to Login Gateway">&larr; Back to Login</a>
+      <nav class="nav-tabs" aria-label="Legal document selection">
+        <a href="/terms" class="tab-link {% if doc_type == 'terms' %}active{% endif %}" {% if doc_type == 'terms' %}aria-current="page"{% endif %}>Terms of Service</a>
+        <a href="/privacy" class="tab-link {% if doc_type == 'privacy' %}active{% endif %}" {% if doc_type == 'privacy' %}aria-current="page"{% endif %}>Privacy Policy</a>
+      </nav>
+    </header>
+
+    <main class="legal-card" role="main">
+      {% if doc_type == 'terms' %}
+      <div class="legal-header">
+        <span class="badge">Legal Document</span>
+        <h1>Terms of Service</h1>
+        <p class="meta-date">Last Updated: November 1, 2026 | Effective Date: November 1, 2026</p>
+      </div>
+
+      <div class="legal-body">
+        <div class="notice-box">
+          <strong>Notice:</strong> This web application is an independent administrative data-aggregation and research tool. It is not an official agency or instrumentality of the Republic of the Philippines.
+        </div>
+
+        <p>These Terms of Service ("Terms") govern access to and use of the <strong>Philippine Government Issuance Title Collector</strong> web application and documentation (collectively, the "Service"), operated and maintained by the Project Operations Team ("Operator", "we", "us", or "our").</p>
+
+        <p>By accessing the Service, entering the access PIN, or checking the agreement box on the authentication gateway, you ("User", "you", or "your") acknowledge that you have read, understood, and agreed to be bound by these Terms.</p>
+
+        <h2>1. Description of Service</h2>
+        <p>The Service is an administrative research tool that gathers, indexes, audits, and formats public titles and metadata of administrative issuances from official Philippine national government department websites:</p>
+        <ul>
+          <li><strong>Department of Agriculture (DA)</strong> &ndash; <code>https://www.da.gov.ph/</code></li>
+          <li><strong>Department of Education (DepEd)</strong> &ndash; <code>https://www.deped.gov.ph/</code></li>
+          <li><strong>Department of Health (DOH)</strong> &ndash; <code>https://doh.gov.ph/</code></li>
+          <li><strong>Department of Environment and Natural Resources (DENR)</strong> &ndash; <code>https://denr.gov.ph/</code></li>
+        </ul>
+        <p>The Service exports gathered records into Microsoft Word (.docx), Microsoft Excel (.xlsx), CSV, and TXT files for scholarly, administrative, and legal research.</p>
+
+        <h2>2. Disclaimer of Government Affiliation</h2>
+        <p>The Operator is an independent maintainer. The Service is <strong>NOT</strong> affiliated with, endorsed by, sponsored by, or operated in partnership with the Department of Agriculture, Department of Education, Department of Health, Department of Environment and Natural Resources, or any other agency of the Philippine Government.</p>
+        <p>All department names, logos, official seals, and portal links referenced belong exclusively to their respective government authorities and are used strictly for factual identification.</p>
+
+        <h2>3. Public Domain and Intellectual Property</h2>
+        <h3>3.1 Public Domain Government Works</h3>
+        <p>Pursuant to <strong>Section 176 of Republic Act No. 8293</strong> (Intellectual Property Code of the Philippines):</p>
+        <blockquote>
+          "No copyright shall subsist in any work of the Government of the Philippines. However, prior approval of the government agency or office wherein the work is created shall be necessary for exploitation of such work for profit."
+        </blockquote>
+        <p>Raw issuance titles, reference codes, publication dates, and administrative circulars gathered from public government websites are public domain records. The Operator asserts no proprietary copyright over raw government issuance metadata.</p>
+
+        <h3>3.2 Application Intellectual Property</h3>
+        <p>The Application source code, database architectures, user interface design, export engines, and documentation are proprietary works owned by the Project Maintainers and licensed contributors. You may not decompile, reverse-engineer, distribute, or create unauthorized derivative works without prior written consent.</p>
+
+        <h2>4. Access Control and Single-Session Policy</h2>
+        <ul>
+          <li><strong>Authentication Gateway:</strong> Access is restricted to authorized administrative users possessing a valid 6-digit access PIN.</li>
+          <li><strong>Single Active Session:</strong> The Application enforces a single active global session. Authenticating from a new browser or device immediately invalidates and terminates any prior active session.</li>
+          <li><strong>Rate Limiting:</strong> The gateway enforces IP-based rate limiting (10 attempts per 60-second window) to defend against brute-force attacks.</li>
+        </ul>
+
+        <h2>5. Acceptable Use Policy</h2>
+        <p>You agree to use the Service in compliance with all applicable Philippine laws, including Republic Act No. 10175 (Cybercrime Prevention Act of 2012) and Republic Act No. 10173 (Data Privacy Act of 2012).</p>
+        <p>You agree not to:</p>
+        <ul>
+          <li>Perform denial-of-service attacks or bypass polite crawl delays configured in the extraction modules;</li>
+          <li>Interfere with or circumvent Cloudflare Web Application Firewalls (WAF) or bot mitigation systems on government web servers;</li>
+          <li>Attempt unauthorized access to the database or underlying infrastructure;</li>
+          <li>Resell, lease, or commercialize access to the Application without authorization.</li>
+        </ul>
+
+        <h2>6. External Government Portals and Digitization Disclaimers</h2>
+        <p>The Service relies on the public availability and page structures of third-party Philippine government web portals. Portals may experience downtime, structural changes, or firewall restrictions. The Operator does not warrant that target government websites will remain accessible or error-free.</p>
+        <p><strong>Government Digitization Gaps:</strong> You expressly acknowledge that the Service can only retrieve issuances that agencies have actively digitized, scanned, and published online. Philippine national government departments have not published digital copies of all historical, existing, or local issuances. Many official orders exist exclusively as physical paper documents in government filing rooms or internal departmental archives.</p>
+        <p><strong>Absence Does Not Imply Inexistence:</strong> The absence or omission of any issuance from this Application does NOT mean that the issuance does not exist or was never enacted. Authoritative legal research must be cross-referenced with physical archives, the Office of the National Administrative Register (ONAR) at the UP Law Center, or the Official Gazette of the Republic of the Philippines.</p>
+        <p>Exported documents include direct hyperlinks to official government files (.pdf documents). We do not control or assume responsibility for broken links, missing attachments, or files hosted on third-party government servers.</p>
+
+        <h2>7. Warranty Disclaimer</h2>
+        <p>THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS. THE OPERATOR EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+        <p>The Service is a research compilation tool, not an official legal repository. Official legal research should be verified against certified copies published in the Official Gazette of the Republic of the Philippines (<code>https://www.officialgazette.gov.ph/</code>).</p>
+
+        <h2>8. Limitation of Liability</h2>
+        <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE OPERATOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM YOUR USE OF THE SERVICE, SYSTEM DOWNTIME, OR ACTIONS TAKEN IN RELIANCE ON COMPILED TITLES. TOTAL LIABILITY SHALL NOT EXCEED ONE HUNDRED UNITED STATES DOLLARS (USD $100.00) OR EQUIVALENT IN PHILIPPINE PESOS.</p>
+
+        <h2>9. Governing Law and Jurisdiction</h2>
+        <p>These Terms shall be governed by and construed in accordance with the laws of the <strong>Republic of the Philippines</strong>. Any dispute arising out of these Terms shall be subject to the exclusive jurisdiction of the competent courts of the Republic of the Philippines.</p>
+
+        <h2>10. Contact Information</h2>
+        <p>For questions or legal notices, please contact:</p>
+        <ul>
+          <li><strong>Entity / Maintainer:</strong> Philippine Government Issuance Title Collector Operations</li>
+          <li><strong>Contact:</strong> System Administrator</li>
+          <li><strong>Jurisdiction:</strong> Republic of the Philippines</li>
+        </ul>
+      </div>
+
+      {% else %}
+      <div class="legal-header">
+        <span class="badge">Legal Document</span>
+        <h1>Privacy Policy</h1>
+        <p class="meta-date">Last Updated: November 1, 2026 | Effective Date: November 1, 2026</p>
+      </div>
+
+      <div class="legal-body">
+        <div class="notice-box">
+          <strong>Commitment to Privacy:</strong> We adhere to the principles of transparency, legitimate purpose, and proportionality under the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).
+        </div>
+
+        <p>The <strong>Philippine Government Issuance Title Collector</strong> ("Service", "we", "us", or "our"), maintained by the Project Operations Team ("Operator"), respects your privacy. This policy outlines how information is collected, processed, and secured when accessing our administrative service.</p>
+
+        <h2>1. Scope of Data Processing</h2>
+        <h3>1.1 Public Government Records (Non-Personal)</h3>
+        <p>The Service indexes public administrative records from official Philippine national government portals (DA, DepEd, DOH, DENR). Under <strong>Section 4(c) of Republic Act No. 10173</strong>, the Data Privacy Act does not apply to information relating to functions of public government officers. Gathered titles, issuance numbers, signing dates, and source URLs are non-personal, public domain records.</p>
+
+        <h3>1.2 Administrative Security and Session Data</h3>
+        <p>We collect only minimal technical information necessary for system operation and security:</p>
+        <ul>
+          <li><strong>Access PIN:</strong> Submitted during authentication; evaluated with cryptographic constant-time comparison. Never stored with individual identities.</li>
+          <li><strong>Session Cookie (<code>session_access_token</code>):</strong> A secure, random UUID cookie issued upon successful verification to track the single active session. Contains no personal information.</li>
+          <li><strong>Client IP Address:</strong> Processed in volatile memory solely to enforce rate limiting (10 attempts per 60 seconds). Automatically purged and never persisted to the permanent database.</li>
+          <li><strong>Operational Server Logs:</strong> Standard request logs (timestamp, route, status code) for maintenance and error diagnosis.</li>
+        </ul>
+
+        <h2>2. Data Processing Inventory</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Data Category</th>
+                <th>Purpose</th>
+                <th>Legal Basis (RA 10173)</th>
+                <th>Retention Period</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Session Cookie</strong></td>
+                <td>Single active session enforcement and access control</td>
+                <td>Legitimate security interest</td>
+                <td>Expires on logout or when superseded</td>
+              </tr>
+              <tr>
+                <td><strong>Client IP Address</strong></td>
+                <td>Brute-force attack and flood protection</td>
+                <td>Legitimate security interest</td>
+                <td>60-second sliding memory window</td>
+              </tr>
+              <tr>
+                <td><strong>Public Government Records</strong></td>
+                <td>Indexing and compiling public legal metadata</td>
+                <td>Public interest and legal research</td>
+                <td>Retained in database until administrative reset</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>3. Cookies and Tracking Technologies</h2>
+        <p>The Application utilizes only <strong>strictly necessary technical cookies</strong>:</p>
+        <ul>
+          <li><strong>Cookie:</strong> <code>session_access_token</code> (First-party, HttpOnly, SameSite=Lax).</li>
+        </ul>
+        <p>We <strong>do not</strong> use third-party tracking pixels, marketing cookies, Google AdSense, or advertising networks.</p>
+
+        <h2>4. Third-Party Service Providers</h2>
+        <p>We do not sell, rent, or trade any information. Technical data is processed only by essential infrastructure providers:</p>
+        <ul>
+          <li><strong>PostgreSQL / Supabase:</strong> Relational database hosting for public government issuance metadata (<a href="https://supabase.com/privacy" target="_blank" rel="noopener noreferrer">Supabase Privacy</a>).</li>
+          <li><strong>Hosting Platform (Vercel / Render / Self-Hosted):</strong> Server runtime hosting and network routing.</li>
+        </ul>
+
+        <h2>5. Security Safeguards</h2>
+        <p>We implement technical and organizational controls to protect data:</p>
+        <ul>
+          <li>Cryptographic constant-time comparison for PIN verification (mitigating timing attacks);</li>
+          <li>Secure 128-bit random UUID session tokens;</li>
+          <li>Automatic session superseding to restrict concurrent access;</li>
+          <li>Rate limiting stored strictly in volatile server memory.</li>
+        </ul>
+
+        <h2>6. Data Subject Rights (RA 10173)</h2>
+        <p>Under the Philippine Data Privacy Act of 2012, individuals hold rights including the Right to be Informed, Right to Access, Right to Rectification, and Right to Erasure. To submit an inquiry, please contact our Data Protection Officer.</p>
+
+        <h2>7. Contact Information</h2>
+        <p>For questions or privacy requests, please contact:</p>
+        <ul>
+          <li><strong>Data Protection / Administration:</strong> System Operations & Privacy Team</li>
+          <li><strong>Jurisdiction:</strong> Republic of the Philippines</li>
+        </ul>
+      </div>
+      {% endif %}
+    </main>
+
+    <footer class="legal-footer" role="contentinfo">
+      <p>&copy; 2026 Philippine Government Issuance Title Collector. All rights reserved.</p>
+    </footer>
+  </div>
+
+</body>
+</html>

@@ -21,6 +21,7 @@ The application compiles collected government issuance titles into an organized 
 - **Structured Excel Export (.xlsx)**: Features auto-fit columns, frozen header row, active auto-filters, and clean typography.
 - **Manual URL / HTML Import Mode**: Allows pasting any official listing URL or raw HTML source. Automatically detects table or article structures, parses records, and provides an interactive preview before committing to the database.
 - **Compliance & Reliability**: Strictly adheres to access limits, distinguishes unavailable/protected portals from scraper errors, and logs failed requests for retries without fabricating records.
+- **Digitization & Completeness Notice**: The tool retrieves only records that government agencies have actively published in digital format online. It cannot extract issuances that exist solely in physical paper archives, internal agency filing rooms, or un-indexed historical repositories. The absence of an issuance in this database does not indicate that the issuance does not exist under Philippine law.
 
 ---
 

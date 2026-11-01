@@ -43,10 +43,15 @@ _rate_limit_lock = threading.Lock()
 pin_blueprint = Blueprint("pin_gateway", __name__)
 
 
-def set_access_pin(pin: str) -> None:
+def set_access_pin(pin: Optional[str]) -> None:
     """Helper to dynamically set/override the ACCESS_PIN (useful for testing or runtime reload)."""
     global ACCESS_PIN
-    ACCESS_PIN = str(pin).strip()
+    if pin is None or pin == "":
+        ACCESS_PIN = ""
+        os.environ.pop("ACCESS_PIN", None)
+    else:
+        ACCESS_PIN = str(pin).strip()
+        os.environ["ACCESS_PIN"] = ACCESS_PIN
 
 
 def get_active_session_token() -> Optional[str]:
@@ -119,7 +124,7 @@ def require_pin_session(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        current_pin = ACCESS_PIN or os.environ.get("ACCESS_PIN")
+        current_pin = ACCESS_PIN if ACCESS_PIN is not None else os.environ.get("ACCESS_PIN")
         if not current_pin:
             return f(*args, **kwargs)
 
@@ -147,15 +152,22 @@ def enforce_global_pin_session():
       - Static assets (/static/...)
       - Gateway authentication endpoints (/login, /api/auth/...)
     """
-    current_pin = ACCESS_PIN or os.environ.get("ACCESS_PIN")
+    current_pin = ACCESS_PIN if ACCESS_PIN is not None else os.environ.get("ACCESS_PIN")
     if not current_pin:
         return None  # Dev/testing pass-through when ACCESS_PIN is unset
 
-    # Exempt static assets and authentication routes
+    # Exempt static assets, legal documents, and authentication routes
     endpoint = request.endpoint or ""
     if endpoint == "static" or endpoint.startswith("pin_gateway."):
         return None
-    if request.path.startswith("/static/") or request.path.startswith("/login") or request.path.startswith("/api/auth/"):
+    if (
+        request.path.startswith("/static/")
+        or request.path.startswith("/login")
+        or request.path.startswith("/api/auth/")
+        or request.path.startswith("/terms")
+        or request.path.startswith("/privacy")
+        or request.path.startswith("/legal")
+    ):
         return None
 
     cookie_token = request.cookies.get(COOKIE_NAME)
@@ -170,6 +182,27 @@ def enforce_global_pin_session():
         }), 401
 
     return None
+
+
+@pin_blueprint.route("/terms", methods=["GET"])
+def terms_page():
+    """Serves the Terms of Service document page."""
+    return render_template("legal.html", doc_type="terms", page_title="Terms of Service")
+
+
+@pin_blueprint.route("/privacy", methods=["GET"])
+def privacy_page():
+    """Serves the Privacy Policy document page."""
+    return render_template("legal.html", doc_type="privacy", page_title="Privacy Policy")
+
+
+@pin_blueprint.route("/legal", methods=["GET"])
+def legal_page():
+    """Serves the legal overview, defaulting to Terms of Service."""
+    doc = request.args.get("doc", "terms")
+    if doc == "privacy":
+        return redirect(url_for("pin_gateway.privacy_page"))
+    return redirect(url_for("pin_gateway.terms_page"))
 
 
 @pin_blueprint.route("/login", methods=["GET"])
@@ -196,11 +229,16 @@ def verify_pin():
     """
     global _active_session_token
 
-    current_pin = ACCESS_PIN or os.environ.get("ACCESS_PIN")
+    current_pin = ACCESS_PIN if ACCESS_PIN is not None else os.environ.get("ACCESS_PIN")
     if not current_pin:
         return jsonify({"error": "Gateway misconfigured: ACCESS_PIN is unset."}), 500
 
     data = request.get_json(silent=True) or {}
+
+    # Verify terms acceptance if provided as False
+    if data.get("terms_agreed") is False:
+        return jsonify({"error": "You must agree to the Terms of Service and Privacy Policy to proceed."}), 400
+
     submitted_pin = str(data.get("pin", "")).strip()
 
     # Timing-safe comparison

@@ -144,6 +144,73 @@
       background-color: var(--status-danger-bg);
     }
 
+    /* Terms Checkbox Group */
+    .terms-group {
+      margin-bottom: 1.25rem;
+      padding: 0.5rem 0.25rem;
+      border-radius: var(--radius);
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .terms-group.is-invalid {
+      background-color: var(--status-danger-bg);
+      border: 1px solid var(--status-danger-border);
+      padding: 0.5rem 0.65rem;
+    }
+
+    .terms-checkbox-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      cursor: pointer;
+      font-size: 0.8125rem;
+      line-height: 1.45;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .terms-checkbox {
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+      flex-shrink: 0;
+      accent-color: var(--brand-navy);
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .terms-checkbox:focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 2px;
+    }
+
+    .terms-text a {
+      color: #1d4ed8;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+
+    .terms-text a:hover {
+      color: var(--brand-navy);
+    }
+
+    .pin-footer-legal {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .pin-footer-legal a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    .pin-footer-legal a:hover {
+      text-decoration: underline;
+      color: var(--brand-navy);
+    }
+
     /* Action Button */
     .btn-submit {
       width: 100%;
@@ -208,10 +275,24 @@
         <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="pin-digit" aria-label="Digit 6 of 6" required>
       </div>
 
+      <div class="terms-group" id="termsGroup">
+        <label class="terms-checkbox-label" for="termsAgree">
+          <input type="checkbox" id="termsAgree" name="terms_agreed" class="terms-checkbox" required>
+          <span class="terms-text">
+            I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+          </span>
+        </label>
+      </div>
+
       <button type="submit" id="submitBtn" class="btn-submit">
         <span id="btnText">Verify PIN</span>
       </button>
     </form>
+
+    <div class="pin-footer-legal">
+      <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> &bull;
+      <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+    </div>
   </main>
 
   <script>
@@ -222,17 +303,25 @@
       const submitBtn = document.getElementById("submitBtn");
       const btnText = document.getElementById("btnText");
       const errorAlert = document.getElementById("errorAlert");
+      const termsCheckbox = document.getElementById("termsAgree");
+      const termsGroup = document.getElementById("termsGroup");
 
-      function showError(msg) {
+      function showError(msg, target = "pin") {
         errorAlert.textContent = msg;
         errorAlert.classList.add("visible");
-        grid.classList.add("is-invalid", "shake");
-        setTimeout(() => grid.classList.remove("shake"), 400);
+        if (target === "terms") {
+          termsGroup.classList.add("is-invalid", "shake");
+          setTimeout(() => termsGroup.classList.remove("shake"), 400);
+        } else {
+          grid.classList.add("is-invalid", "shake");
+          setTimeout(() => grid.classList.remove("shake"), 400);
+        }
       }
 
       function clearError() {
         errorAlert.classList.remove("visible");
         grid.classList.remove("is-invalid");
+        termsGroup.classList.remove("is-invalid");
       }
 
       function getPinValue() {
@@ -243,6 +332,10 @@
         inputs.forEach(input => input.value = "");
         inputs[0].focus();
       }
+
+      termsCheckbox.addEventListener("change", () => {
+        clearError();
+      });
 
       // Input Event Handlers
       inputs.forEach((input, index) => {
@@ -258,6 +351,11 @@
 
           // Auto-submit when all boxes are populated
           if (getPinValue().length === inputs.length) {
+            if (!termsCheckbox.checked) {
+              showError("Please tick the box to agree to the Terms of Service and Privacy Policy.", "terms");
+              termsCheckbox.focus();
+              return;
+            }
             form.requestSubmit();
           }
         });
@@ -313,8 +411,15 @@
           return;
         }
 
+        if (!termsCheckbox.checked) {
+          showError("Please tick the box to agree to the Terms of Service and Privacy Policy.", "terms");
+          termsCheckbox.focus();
+          return;
+        }
+
         // Disable UI during roundtrip
         inputs.forEach(inp => inp.disabled = true);
+        termsCheckbox.disabled = true;
         submitBtn.disabled = true;
         btnText.textContent = "Verifying...";
 
@@ -322,7 +427,10 @@
           const res = await fetch("/api/auth/pin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pin })
+            body: JSON.stringify({
+              pin,
+              terms_agreed: termsCheckbox.checked
+            })
           });
 
           if (res.ok) {
@@ -337,6 +445,7 @@
           resetInputs();
         } finally {
           inputs.forEach(inp => inp.disabled = false);
+          termsCheckbox.disabled = false;
           submitBtn.disabled = false;
           btnText.textContent = "Verify PIN";
         }
