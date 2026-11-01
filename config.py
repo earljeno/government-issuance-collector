@@ -11,8 +11,16 @@ try:
 except ImportError:
     pass
 
-# Detect if we are running on Vercel
+# Detect if we are running in cloud production (Vercel, Render, etc.)
 IS_VERCEL = os.environ.get("VERCEL") == "1"
+IS_RENDER = os.environ.get("RENDER") in ("true", "1")
+IS_PROD = (
+    IS_VERCEL
+    or IS_RENDER
+    or os.environ.get("ENV") == "production"
+    or os.environ.get("ENVIRONMENT") == "production"
+    or os.environ.get("FLASK_ENV") == "production"
+)
 
 # 1. File storage routing
 if IS_VERCEL:

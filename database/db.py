@@ -1,3 +1,4 @@
+import os
 import json
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
@@ -23,19 +24,34 @@ import config
 from config import DATABASE_URI
 from database.models import IssuanceRecord
 
-# Optimized engine configuration for Supabase / Supavisor / PgBouncer connection poolers:
-# - pool_size=2 and max_overflow=3 prevent exhausting Session mode client limits (port 5432).
-# - prepare_threshold=None disables statement caching, enabling Transaction mode (port 6543).
-# - pool_pre_ping and pool_recycle prevent stale connection drops.
-ENGINE_KWARGS = {
-    "pool_size": 2,
-    "max_overflow": 3,
-    "pool_pre_ping": True,
-    "pool_recycle": 300,
-    "connect_args": {"prepare_threshold": None}
-}
+def get_engine_kwargs(uri: str) -> dict:
+    """
+    Configures SQLAlchemy connection pooling dynamically:
+    - Cloud production / remote poolers (Render, Supabase, Vercel): limits pool_size=2 and max_overflow=3
+      to keep total connections well below the Supabase Session mode limit (15 concurrent clients).
+    - Local / Dev: unconstrained pool (pool_size=10, max_overflow=20) for fast parallel scraping without limits.
+    """
+    is_remote_or_prod = getattr(config, "IS_PROD", False) or any(
+        host in (uri or "") for host in ("supabase.", "pooler.supabase", "render.com", "neon.tech", "aws")
+    )
 
-engine = create_engine(DATABASE_URI, **ENGINE_KWARGS)
+    kwargs = {
+        "pool_pre_ping": True,
+        "connect_args": {"prepare_threshold": None}
+    }
+
+    if is_remote_or_prod:
+        kwargs["pool_size"] = int(os.environ.get("DB_POOL_SIZE", 2))
+        kwargs["max_overflow"] = int(os.environ.get("DB_MAX_OVERFLOW", 3))
+        kwargs["pool_recycle"] = 300
+    else:
+        kwargs["pool_size"] = int(os.environ.get("DB_POOL_SIZE", 10))
+        kwargs["max_overflow"] = int(os.environ.get("DB_MAX_OVERFLOW", 20))
+
+    return kwargs
+
+
+engine = create_engine(DATABASE_URI, **get_engine_kwargs(DATABASE_URI))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -108,7 +124,7 @@ def get_current_engine():
     global engine, SessionLocal
     uri = getattr(config, "DATABASE_URI", DATABASE_URI)
     if uri and str(engine.url) != uri:
-        engine = create_engine(uri, **ENGINE_KWARGS)
+        engine = create_engine(uri, **get_engine_kwargs(uri))
         SessionLocal.configure(bind=engine)
     return engine
 
