@@ -12,6 +12,124 @@ from database.models import IssuanceRecord
 
 logger = logging.getLogger(__name__)
 
+MONTH_OCR_CORRECTIONS = [
+    (r"\bjanuray\b", "January"),
+    (r"\bfebruray\b", "February"),
+    (r"\bfebuary\b", "February"),
+    (r"\bapri\b", "April"),
+    (r"\baprill\b", "April"),
+    (r"\baugst\b", "August"),
+    (r"\bagust\b", "August"),
+    (r"\bseptemebr\b", "September"),
+    (r"\bseptmber\b", "September"),
+    (r"\bseptembr\b", "September"),
+    (r"\bsept\b", "September"),
+    (r"\boctobr\b", "October"),
+    (r"\boctobre\b", "October"),
+    (r"\bnovemebr\b", "November"),
+    (r"\bnovmbr\b", "November"),
+    (r"\bnovemb\b", "November"),
+    (r"\bdecemebr\b", "December"),
+    (r"\bdecmbr\b", "December"),
+    (r"\bdecemb\b", "December"),
+]
+
+
+def sanitize_publication_date(raw_date: Optional[str]) -> str:
+    """
+    Standardizes publication dates into ISO-8601 (YYYY-MM-DD).
+    Corrects OCR typographical errors in month names and enforces boundary checks.
+    """
+    if not raw_date:
+        return ""
+
+    text = str(raw_date).strip()
+    if not text:
+        return ""
+
+    # Correct OCR month typos
+    for pattern, replacement in MONTH_OCR_CORRECTIONS:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    dt: Optional[datetime] = None
+
+    # Try ISO-8601 parsing first
+    try:
+        dt = datetime.fromisoformat(text)
+    except (ValueError, TypeError):
+        pass
+
+    # Try explicit common date formats
+    if not dt:
+        formats = [
+            "%Y-%m-%d",
+            "%B %d, %Y",
+            "%d %B %Y",
+            "%B %d %Y",
+            "%b %d, %Y",
+            "%d %b %Y",
+            "%b %d %Y",
+            "%m/%d/%Y",
+            "%d/%m/%Y",
+            "%Y/%m/%d",
+        ]
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+
+    # Try regex pattern extraction if embedded with surrounding text
+    if not dt:
+        m1 = re.search(r"\b(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b", text)
+        if m1:
+            try:
+                dt = datetime.strptime(f"{m1.group(1)} {m1.group(2)} {m1.group(3)}", "%d %B %Y")
+            except ValueError:
+                try:
+                    dt = datetime.strptime(f"{m1.group(1)} {m1.group(2)} {m1.group(3)}", "%d %b %Y")
+                except ValueError:
+                    pass
+
+    if not dt:
+        m2 = re.search(r"\b([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})\b", text)
+        if m2:
+            try:
+                dt = datetime.strptime(f"{m2.group(1)} {m2.group(2)} {m2.group(3)}", "%B %d %Y")
+            except ValueError:
+                try:
+                    dt = datetime.strptime(f"{m2.group(1)} {m2.group(2)} {m2.group(3)}", "%b %d %Y")
+                except ValueError:
+                    pass
+
+    if not dt:
+        m3 = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text)
+        if m3:
+            try:
+                dt = datetime(int(m3.group(1)), int(m3.group(2)), int(m3.group(3)))
+            except ValueError:
+                pass
+
+    if not dt:
+        m_year = re.fullmatch(r"(\d{4})", text)
+        if m_year:
+            try:
+                yr = int(m_year.group(1))
+                if 1900 <= yr <= datetime.now().year:
+                    return f"{yr}-01-01"
+            except ValueError:
+                pass
+        return ""
+
+    # Boundary and typo corrections
+    if dt.year == 2500:
+        dt = dt.replace(year=2005)
+    elif dt.year > datetime.now().year or dt.year < 1900:
+        return ""
+
+    return dt.strftime("%Y-%m-%d")
+
 
 def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -255,7 +373,7 @@ def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int
         if scraper._search_documents(cat_code):
             items, _ = scraper._fetch_page(1, cat_code)
             if items:
-                records = [scraper._item_to_record(item, cat_name) for item in items]
+                records = [r for item in items if (r := scraper._item_to_record(item, cat_name)) is not None]
                 ins, _ = scraper.save_records(records)
                 inserted_total += ins
 
@@ -273,7 +391,7 @@ def backfill_missing_doh_records(gap_samples: Optional[List[str]] = None) -> int
             }, timeout=REQUEST_TIMEOUT_SECONDS)
             items, _ = scraper._fetch_page(1, "")
             if items:
-                records = [scraper._item_to_record(item, item.get("issuanceType") or "General") for item in items]
+                records = [r for item in items if (r := scraper._item_to_record(item, item.get("issuanceType") or "General")) is not None]
                 ins, _ = scraper.save_records(records)
                 inserted_total += ins
 

@@ -183,17 +183,26 @@ class DAScraper(BaseScraper):
                     title_text = code_no
                     code_no = ""
 
+                if not title_text:
+                    continue
+
                 # Filter by year if specified
                 if year_filter:
                     year_str = str(year_filter)
                     if table_year != year_str and year_str not in date_text and year_str not in title_text:
                         continue
 
-                # Find source link
+                # Extract source document link without falling back to category listing
                 link_tag = row.find("a", href=True)
-                source_link = page_url
-                if link_tag and link_tag["href"]:
-                    source_link = urljoin(page_url, link_tag["href"].strip())
+                source_link = ""
+                if link_tag and link_tag.get("href"):
+                    raw_href = link_tag["href"].strip()
+                    if raw_href and raw_href != "#":
+                        candidate = urljoin(page_url, raw_href)
+                        if candidate != page_url:
+                            source_link = candidate
+
+                self.check_url_academic_provenance(source_link, self.department_code)
 
                 record = IssuanceRecord(
                     department=self.department_name,

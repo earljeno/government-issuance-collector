@@ -133,14 +133,29 @@ class ManualURLExtractor:
                 if not title and not num:
                     continue
 
+                final_title = title or num
+                if not final_title:
+                    continue
+
                 a_tag = r.find("a", href=True)
-                src = urljoin(base_url, a_tag["href"].strip()) if a_tag else base_url
+                src = ""
+                if a_tag and a_tag.get("href"):
+                    raw_href = a_tag["href"].strip()
+                    if raw_href and raw_href != "#":
+                        candidate = urljoin(base_url, raw_href)
+                        if candidate != base_url:
+                            src = candidate
+
+                if src:
+                    lower_url = src.lower()
+                    if lower_url.endswith(".jpg") or lower_url.endswith(".jpeg") or lower_url.endswith(".png") or "drive.google.com" in lower_url:
+                        logger.warning(f"[ManualImport] Academic Provenance Warning: Non-PDF/HTML or non-government drive URL: {src}")
 
                 records.append(IssuanceRecord(
                     department=dept,
                     category=cat,
                     issuance_number=num,
-                    title=title or num,
+                    title=final_title,
                     publication_date=date,
                     source_url=src
                 ))
@@ -162,7 +177,18 @@ class ManualURLExtractor:
                 continue
 
             a_tag = h.find("a", href=True) or item.find("a", href=True)
-            src = urljoin(base_url, a_tag["href"].strip()) if a_tag else base_url
+            src = ""
+            if a_tag and a_tag.get("href"):
+                raw_href = a_tag["href"].strip()
+                if raw_href and raw_href != "#":
+                    candidate = urljoin(base_url, raw_href)
+                    if candidate != base_url:
+                        src = candidate
+
+            if src:
+                lower_url = src.lower()
+                if lower_url.endswith(".jpg") or lower_url.endswith(".jpeg") or lower_url.endswith(".png") or "drive.google.com" in lower_url:
+                    logger.warning(f"[ManualImport] Academic Provenance Warning: Non-PDF/HTML or non-government drive URL: {src}")
 
             # Extract date
             time_tag = item.find("time") or item.find(class_=lambda c: c and "date" in c.lower())
@@ -194,7 +220,13 @@ class ManualURLExtractor:
             text = a.get_text(strip=True)
             href = a["href"].strip()
             if len(text) > 10 and any(k in text.lower() or k in href.lower() for k in ["order", "circular", "memorand", "advisory", "act", "resolution"]):
-                src = urljoin(base_url, href)
+                src = urljoin(base_url, href) if href and href != "#" else ""
+                if src == base_url:
+                    src = ""
+                if src:
+                    lower_url = src.lower()
+                    if lower_url.endswith(".jpg") or lower_url.endswith(".jpeg") or lower_url.endswith(".png") or "drive.google.com" in lower_url:
+                        logger.warning(f"[ManualImport] Academic Provenance Warning: Non-PDF/HTML or non-government drive URL: {src}")
                 records.append(IssuanceRecord(
                     department=dept,
                     category=cat,

@@ -178,21 +178,57 @@ class DepEdScraper(BaseScraper):
         if not articles:
             articles = soup.find_all(class_=lambda c: c and ("post" in c or "entry" in c))
 
+        generic_titles = {
+            "DEPED ORDER",
+            "DEPED ORDERS",
+            "DEPED MEMORANDUM",
+            "DEPED MEMORANDA",
+            "DEPED ADVISORY",
+            "DEPED ADVISORIES",
+            "OFFICE ORDER",
+            "OFFICE ORDERS",
+            "JOINT MEMORANDUM CIRCULAR",
+            "IMPLEMENTING RULES AND REGULATIONS",
+        }
+
         for art in articles:
-            h_tag = art.find(["h1", "h2", "h3", "h4"])
-            if not h_tag:
+            # Action 3: Scope title extraction exclusively to .entry-title a, h2.title a, h3 a
+            title_tag = art.select_one(".entry-title a, h2.title a, h3 a")
+            if not title_tag:
                 continue
 
-            raw_title = h_tag.get_text(strip=True)
+            # Action 2: Exclude pagination navigation links
+            raw_href = title_tag.get("href", "").strip()
+            if not raw_href or "/page/" in raw_href:
+                continue
+
+            post_link = urljoin(current_url, raw_href)
+            if post_link == current_url or "/page/" in post_link:
+                continue
+
+            raw_title = title_tag.get_text(strip=True)
             if not raw_title or len(raw_title) < 4:
                 continue
 
-            # Link
-            a_tag = h_tag.find("a", href=True)
-            post_link = urljoin(current_url, a_tag["href"].strip()) if a_tag else current_url
+            # Reject generic placeholder titles
+            if raw_title.upper() in generic_titles or re.match(r"^DEPED\s+(?:ORDER|ORDERS|MEMORANDUM|MEMORANDA|ADVISORY|ADVISORIES)$", raw_title, re.IGNORECASE):
+                continue
 
             # Parse issuance metadata from title and post
             iss_num, date_str, title_str = self._extract_metadata(raw_title, post_link, art)
+
+            final_title = (title_str or raw_title).strip()
+            if final_title.upper() in generic_titles or re.match(r"^DEPED\s+(?:ORDER|ORDERS|MEMORANDUM|MEMORANDA|ADVISORY|ADVISORIES)$", final_title, re.IGNORECASE):
+                continue
+
+            # Academic provenance: title must reflect policy and never be empty
+            if not final_title and not iss_num:
+                continue
+            if not final_title and iss_num:
+                final_title = iss_num
+
+            if not final_title:
+                continue
 
             # Year filter checking
             if year_filter:
@@ -200,11 +236,13 @@ class DepEdScraper(BaseScraper):
                 if year_s not in date_str and year_s not in raw_title and f"/{year_s}/" not in post_link:
                     continue
 
+            self.check_url_academic_provenance(post_link, self.department_code)
+
             record = IssuanceRecord(
                 department=self.department_name,
                 category=category_name,
                 issuance_number=iss_num,
-                title=title_str or raw_title,
+                title=final_title,
                 publication_date=date_str,
                 source_url=post_link
             )
@@ -418,4 +456,4 @@ class DepEdScraper(BaseScraper):
             if len(parts2) > 1:
                 title = parts2[1].strip()
 
-        return issuance_number or "Unnumbered Notice", date_str, title
+        return issuance_number or "", date_str, title

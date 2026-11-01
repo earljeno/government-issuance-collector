@@ -104,7 +104,7 @@ DEPARTMENTS = {
         "categories": {
             "DepEd Advisories": "https://www.deped.gov.ph/category/issuances/deped-advisories/",
             "DepEd Memoranda": "https://www.deped.gov.ph/category/issuances/deped-memoranda/",
-            "DepEd Orders": "https://www.deped.gov.ph/deped-orders/",
+            "DepEd Orders": "https://www.deped.gov.ph/category/issuances/deped-orders/",
             "Joint Memorandum Circular": "https://www.deped.gov.ph/category/issuances/joint-memorandum-circular/",
             "Office Orders": "https://www.deped.gov.ph/category/issuances/office-order/",
             "Implementing Rules and Regulations": "https://www.deped.gov.ph/category/issuances/implementing-rules-and-regulations/"

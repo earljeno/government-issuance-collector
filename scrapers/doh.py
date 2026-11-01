@@ -1,9 +1,11 @@
 import logging
 import re
 import time
+from datetime import datetime
 from typing import Callable, List, Optional
 from threading import Event
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS, REQUEST_DELAY_SECONDS, REQUEST_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
@@ -144,30 +146,52 @@ class DOHScraper(BaseScraper):
 
         return [], True
 
-    def _item_to_record(self, item: dict, cat_name: str) -> IssuanceRecord:
+    def _item_to_record(self, item: dict, cat_name: str) -> Optional[IssuanceRecord]:
         """Convert a DOH JSON item to an IssuanceRecord."""
         doc_id = item.get("documentId")
         doc_type = item.get("issuanceType") or cat_name
         doc_num = (item.get("issuanceNumber") or "").strip()
         subject = (item.get("subject") or "").strip()
-        
-        if not subject:
-            subject = f"{doc_type} {doc_num}".strip() or "Untitled DOH Issuance"
 
-        # Format publication date from documentDate or dateCreated
+        if not subject:
+            fallback = f"{doc_type} {doc_num}".strip()
+            subject = fallback if fallback else (doc_num or "")
+
+        if not subject and not doc_num:
+            return None
+
+        # Parse publication date and apply boundary checks
         raw_date = (
             item.get("publishedDate")
             or item.get("documentDate")
             or item.get("dateCreated")
             or ""
         )
-        pub_date = str(raw_date).split("T")[0] if raw_date else ""
+        pub_date = ""
+        if raw_date:
+            raw_str = str(raw_date).strip()
+            dt = None
+            try:
+                dt = datetime.fromisoformat(raw_str)
+            except (ValueError, TypeError):
+                m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", raw_str)
+                if m:
+                    try:
+                        dt = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                    except ValueError:
+                        pass
 
-        file_url = (
-            f"{self.base_url}/Rest/GetFile?id={doc_id}"
-            if doc_id
-            else f"{self.base_url}/Search"
-        )
+            if dt:
+                if dt.year == 2500:
+                    dt = dt.replace(year=2005)
+                    pub_date = dt.strftime("%Y-%m-%d")
+                elif dt.year > datetime.now().year:
+                    pub_date = ""
+                else:
+                    pub_date = dt.strftime("%Y-%m-%d")
+
+        file_url = f"{self.base_url}/Rest/GetFile?id={doc_id}" if doc_id else ""
+        self.check_url_academic_provenance(file_url, self.department_code)
 
         return IssuanceRecord(
             department=self.department_name,
@@ -273,7 +297,7 @@ class DOHScraper(BaseScraper):
                 if not items:
                     break
 
-                records = [self._item_to_record(item, cat_name) for item in items]
+                records = [r for item in items if (r := self._item_to_record(item, cat_name)) is not None]
 
                 if year:
                     year_val = str(year)
@@ -375,27 +399,35 @@ class DOHScraper(BaseScraper):
                 if not title_text and not num_text:
                     continue
 
+                final_title = title_text or num_text
+                if not final_title:
+                    continue
+
                 if year_filter:
                     year_val = str(year_filter)
                     if (
                         year_val not in date_text
-                        and year_val not in title_text
+                        and year_val not in final_title
                         and year_val not in num_text
                     ):
                         continue
 
                 link = row.find("a", href=True)
-                from urllib.parse import urljoin
-                full_link = (
-                    urljoin(source_url, link["href"].strip())
-                    if link else source_url
-                )
+                full_link = ""
+                if link and link.get("href"):
+                    raw_href = link["href"].strip()
+                    if raw_href and raw_href != "#":
+                        candidate = urljoin(source_url, raw_href)
+                        if candidate != source_url:
+                            full_link = candidate
+
+                self.check_url_academic_provenance(full_link, self.department_code)
 
                 records.append(IssuanceRecord(
                     department=self.department_name,
                     category=category_name,
                     issuance_number=num_text,
-                    title=title_text or num_text,
+                    title=final_title,
                     publication_date=date_text,
                     source_url=full_link,
                 ))

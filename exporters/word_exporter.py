@@ -13,9 +13,17 @@ from config import EXPORTS_DIR
 def add_hyperlink(paragraph, url: str, text: str, color="004B87", underline=True):
     """
     Inserts a clickable hyperlink element into a python-docx paragraph.
+    Validates URL schema to prevent fatal OpenXML relationship errors.
     """
+    if not url or not str(url).strip():
+        return
+
+    clean_url = str(url).strip()
+    if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+        clean_url = "https://" + clean_url.lstrip("/")
+
     part = paragraph.part
-    r_id = part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)
+    r_id = part.relate_to(clean_url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)
 
     hyperlink = parse_xml(f'<w:hyperlink xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" r:id="{r_id}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>')
     new_run = parse_xml(f'<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')

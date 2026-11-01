@@ -170,6 +170,8 @@ class DENRScraper(BaseScraper):
                 # Clean up title: normalize whitespace
                 clean_title = re.sub(r'\s+', ' ', title_text).strip()
                 final_title = clean_title or num_text
+                if not final_title:
+                    continue
 
                 # Apply year filter if requested
                 if year_filter:
@@ -179,7 +181,15 @@ class DENRScraper(BaseScraper):
 
                 # Locate document attachment/download URL
                 link = r.find("a", href=True)
-                full_link = urljoin(source_url, link["href"].strip()) if link else source_url
+                full_link = ""
+                if link and link.get("href"):
+                    raw_href = link["href"].strip()
+                    if raw_href and raw_href != "#":
+                        candidate = urljoin(source_url, raw_href)
+                        if candidate != source_url:
+                            full_link = candidate
+
+                self.check_url_academic_provenance(full_link, self.department_code)
 
                 records.append(IssuanceRecord(
                     department=self.department_name,
@@ -204,7 +214,17 @@ class DENRScraper(BaseScraper):
                     continue
 
                 raw_title = a_tag.get_text(strip=True)
-                file_url = urljoin(source_url, a_tag.get("href", "").strip())
+                if not raw_title:
+                    continue
+
+                raw_href = a_tag.get("href", "").strip()
+                file_url = ""
+                if raw_href and raw_href != "#":
+                    candidate = urljoin(source_url, raw_href)
+                    if candidate != source_url:
+                        file_url = candidate
+
+                self.check_url_academic_provenance(file_url, self.department_code)
 
                 m_num = re.search(r'(?:DAO|DMC|DMO|JMC|JAO)?[\s_-]*((?:20\d\d|19\d\d)[-_]\d+[\w-]*)', raw_title, re.IGNORECASE)
                 iss_num = m_num.group(0).strip() if m_num else ""

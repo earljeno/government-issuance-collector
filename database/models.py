@@ -21,11 +21,14 @@ class IssuanceRecord:
         Preserves original values in the record while using normalized
         strings for duplicate comparison.
         """
-        norm_dept = self.department.strip().lower()
-        norm_cat = self.category.strip().lower()
-        # Normalize whitespace and lowercase for comparison only
-        norm_num = re.sub(r'\s+', ' ', self.issuance_number.strip().lower())
-        norm_title = re.sub(r'\s+', ' ', self.title.strip().lower())
+        norm_dept = (self.department or "").strip().lower()
+        norm_cat = (self.category or "").strip().lower()
+        
+        raw_num = (self.issuance_number or "").lower()
+        norm_num = re.sub(r'[^\w]', '', raw_num).replace('_', '')
+        
+        raw_title = (self.title or "").lower()
+        norm_title = re.sub(r'[^\w]', '', raw_title).replace('_', '')
         
         raw_key = f"{norm_dept}|{norm_cat}|{norm_num}|{norm_title}"
         return hashlib.sha256(raw_key.encode('utf-8')).hexdigest()

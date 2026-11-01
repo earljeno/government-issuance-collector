@@ -30,6 +30,19 @@ class BaseScraper(ABC):
     RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
     MAX_BACKOFF_SECONDS = 60
 
+    @staticmethod
+    def check_url_academic_provenance(url: str, department_code: str = "") -> None:
+        """Flags non-PDF/HTML or non-government drive URLs to maintain research integrity."""
+        if not url:
+            return
+        lower_url = url.lower()
+        if lower_url.endswith(".jpg") or lower_url.endswith(".jpeg") or lower_url.endswith(".png") or "drive.google.com" in lower_url:
+            logger.warning(
+                "[%s] Academic Provenance Warning: Non-PDF/HTML or non-government drive URL detected: %s",
+                department_code,
+                url,
+            )
+
     def __init__(self, department_name: str, department_code: str):
         self.department_name = department_name
         self.department_code = department_code

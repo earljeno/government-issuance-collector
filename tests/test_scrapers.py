@@ -80,7 +80,7 @@ class TestScrapersAndApp(unittest.TestCase):
         self.assertIsNone(next_url_p2)
 
     def test_deped_last_page_no_backward_loop(self):
-        html = '<nav id="nav-below"><div class="nav-next"><a href="https://www.deped.gov.ph/category/issuances/deped-advisories/page/453/">Newer posts</a></div></nav><article class="post"><h2><a href="#">DA 01</a></h2></article>'
+        html = '<nav id="nav-below"><div class="nav-next"><a href="https://www.deped.gov.ph/category/issuances/deped-advisories/page/453/">Newer posts</a></div></nav><article class="post"><h2 class="entry-title"><a href="https://www.deped.gov.ph/2026/01/01/da-01/">January 1, 2026 DA 01 – General Advisories Notice</a></h2></article>'
         scraper = DepEdScraper()
         records, next_url = scraper._parse_page(html, "DepEd Advisories", "https://www.deped.gov.ph/category/issuances/deped-advisories/page/454/")
         self.assertEqual(len(records), 1)
