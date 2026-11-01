@@ -3,10 +3,9 @@ import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 import config
+
 # Use an isolated test database so production/user records are never wiped
-config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
-    "/government_issuances", "/government_issuances_test"
-)
+config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL", "postgresql://postgres:root@localhost:5432/government_issuances_test")
 
 from scrapers.da import DAScraper
 from scrapers.deped import DepEdScraper
@@ -32,11 +31,6 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 class TestScrapersAndApp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import config
-        # Use an isolated test database so production/user records are never wiped
-        config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
-    "/government_issuances", "/government_issuances_test"
-)
         init_db()
 
     def setUp(self):
@@ -101,7 +95,6 @@ class TestScrapersAndApp(unittest.TestCase):
         self.assertEqual(records[0].title, "National Health Workforce Strategic Plan 2026-2030")
         self.assertEqual(records[0].publication_date, "September 12, 2026")
         self.assertEqual(records[0].source_url, "https://doh.gov.ph/policies/ao2026-0015.pdf")
-
 
     def test_doh_api_scrape_mocked(self):
         """Verify DOH scraper interacts correctly with API endpoints."""

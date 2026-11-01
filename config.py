@@ -1,13 +1,15 @@
 import os
 import tempfile
 from pathlib import Path
-from dotenv import load_dotenv
-
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load environment variables from .env if present
-load_dotenv(BASE_DIR / ".env")
+# Load environment variables from .env if python-dotenv is present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass
 
 # Detect if we are running on Vercel
 IS_VERCEL = os.environ.get("VERCEL") == "1"

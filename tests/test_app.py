@@ -2,8 +2,9 @@ import os
 import unittest
 import config
 
-config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
-    "/government_issuances", "/government_issuances_test"
+config.DATABASE_URI = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql://postgres:root@localhost:5432/government_issuances_test"
 )
 
 from app import app

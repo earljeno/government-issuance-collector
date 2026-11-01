@@ -6,8 +6,9 @@ from unittest.mock import patch, MagicMock
 from docx import Document
 
 import config
-config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
-    "/government_issuances", "/government_issuances_test"
+config.DATABASE_URI = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql://postgres:root@localhost:5432/government_issuances_test"
 )
 
 from scrapers.deped import DepEdScraper
@@ -284,7 +285,7 @@ class TestRefactoringFixes(unittest.TestCase):
         )
         self.assertIsNotNone(log_id)
 
-        # INSERT OR IGNORE deduplication check
+        # PostgreSQL ON CONFLICT DO NOTHING deduplication check
         dup_id = log_quarantine(
             department="DA",
             category="Administrative Orders",
@@ -382,6 +383,8 @@ class TestRefactoringFixes(unittest.TestCase):
 
     def test_deped_parallel_scraping(self):
         """Verify DepEd scraper executes multiple categories concurrently via ThreadPoolExecutor."""
+        from database.db import delete_all_issuances
+        delete_all_issuances("Department of Education")
         scraper = DepEdScraper()
 
         def mock_fetch(url):
