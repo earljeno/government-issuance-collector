@@ -186,7 +186,7 @@ class BaseScraper(ABC):
         return None
 
     def save_records(self, records: List[IssuanceRecord]) -> tuple[int, int]:
-        """Batch saves extracted records to the SQLite database."""
+        """Batch saves extracted records to the database."""
         if not records:
             return 0, 0
         return save_issuances_batch(records)

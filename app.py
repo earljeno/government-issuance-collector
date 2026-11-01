@@ -1,13 +1,14 @@
 import os
 import sys
 import re
+import json
 import logging
 import threading
 import concurrent.futures
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
-from config import DEPARTMENTS, EXPORTS_DIR, DATABASE_PATH
+from config import DEPARTMENTS, EXPORTS_DIR
 from database.db import (
     init_db,
     get_all_department_statuses,
@@ -531,27 +532,60 @@ def export_file(fmt: str):
 
 @app.route("/api/backup-db", methods=["GET"])
 def backup_database():
-    """Allows downloading the raw SQLite database file directly."""
-    if not os.path.exists(DATABASE_PATH):
-        return jsonify({"error": "Database not initialized"}), 404
-    return send_file(
-        DATABASE_PATH,
-        mimetype="application/x-sqlite3",
-        as_attachment=True,
-        download_name="issuances.db"
+    """Allows downloading a complete JSON snapshot of all database records."""
+    issuances = get_issuances()
+    statuses = get_all_department_statuses()
+    payload = {
+        "exported_at": datetime.now().isoformat(),
+        "total_records": len(issuances),
+        "department_statuses": statuses,
+        "issuances": issuances
+    }
+    json_bytes = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+    filename = f"government_issuances_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return Response(
+        json_bytes,
+        mimetype="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 @app.route("/api/restore-db", methods=["POST"])
 def restore_database():
-    """Allows uploading and restoring a SQLite database file."""
+    """Allows uploading and restoring issuances from a JSON backup file."""
     if "file" not in request.files:
         return jsonify({"success": False, "message": "No file uploaded"}), 400
     file = request.files["file"]
     if not file or file.filename == "":
         return jsonify({"success": False, "message": "No file selected"}), 400
-    
-    file.save(DATABASE_PATH)
-    return jsonify({"success": True, "message": "Database successfully restored."})
+
+    try:
+        content = file.read().decode("utf-8")
+        data = json.loads(content)
+        raw_records = data.get("issuances", []) if isinstance(data, dict) else data
+        if not isinstance(raw_records, list):
+            return jsonify({"success": False, "message": "Invalid backup file structure: expected 'issuances' list."}), 400
+
+        records = [
+            IssuanceRecord(
+                department=r.get("department", ""),
+                category=r.get("category", ""),
+                issuance_number=r.get("issuance_number"),
+                title=r.get("title", ""),
+                publication_date=r.get("publication_date"),
+                source_url=r.get("source_url"),
+                extraction_timestamp=r.get("extraction_timestamp")
+            )
+            for r in raw_records
+            if r.get("department") and r.get("title")
+        ]
+        inserted, duplicates = save_issuances_batch(records)
+        return jsonify({
+            "success": True,
+            "message": f"Database successfully restored: {inserted} records inserted, {duplicates} duplicates skipped."
+        })
+    except Exception as exc:
+        logger.exception("Database restore failed: %s", exc)
+        return jsonify({"success": False, "message": f"Restore failed: {str(exc)}"}), 500
 
 if __name__ == "__main__":
     init_db()

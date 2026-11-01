@@ -6,7 +6,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
-config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+import os
+config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
+    "/government_issuances", "/government_issuances_test"
+)
 
 from app import app
 from database.db import init_db, save_issuance, delete_all_issuances

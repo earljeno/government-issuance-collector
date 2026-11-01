@@ -1,6 +1,10 @@
+import os
 import unittest
 import config
-config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+
+config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
+    "/government_issuances", "/government_issuances_test"
+)
 
 from app import app
 from database.db import init_db, get_issuance_count
@@ -141,7 +145,10 @@ class TestAppEndpoints(unittest.TestCase):
     def test_backup_db_endpoint(self):
         resp = self.client.get("/api/backup-db")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.headers.get("Content-Type"), "application/x-sqlite3")
+        self.assertEqual(resp.headers.get("Content-Type"), "application/json")
+        data = resp.get_json()
+        self.assertIn("issuances", data)
+        self.assertIn("department_statuses", data)
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,7 +34,7 @@ government-issuance-collector/
 ├── README.md                  # Installation and usage instructions
 ├── database/
 │   ├── models.py              # IssuanceRecord dataclass & duplicate key hashing
-│   └── db.py                  # SQLite database engine, queries, and migrations
+│   └── db.py                  # PostgreSQL database engine, models, and queries
 ├── scrapers/
 │   ├── base.py                # Abstract BaseScraper with retry, delay, and callbacks
 │   ├── da.py                  # Department of Agriculture (TablePress scraper)

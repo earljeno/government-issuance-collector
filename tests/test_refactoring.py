@@ -6,7 +6,9 @@ from unittest.mock import patch, MagicMock
 from docx import Document
 
 import config
-config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
+    "/government_issuances", "/government_issuances_test"
+)
 
 from scrapers.deped import DepEdScraper
 from scrapers.da import DAScraper
@@ -415,29 +417,6 @@ class TestRefactoringFixes(unittest.TestCase):
         from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
         clear_checkpoint("Department of Education")
 
-    def test_database_uri_and_sqlalchemy_setup(self):
-        """Verify dynamic SQLite/Postgres database URI routing and SQLAlchemy initialization."""
-        from database.db import engine, SessionLocal, Base, init_db
-        self.assertIsNotNone(engine)
-        self.assertIsNotNone(SessionLocal)
-        self.assertIsNotNone(Base)
-
-        # Check local URI is sqlite
-        self.assertTrue(config.DATABASE_URI.startswith("sqlite:///"))
-
-        # Verify Vercel Postgres URI formatting
-        raw_url = "postgres://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
-        expected_uri = "postgresql://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
-        converted = raw_url.replace("postgres://", "postgresql://", 1)
-        self.assertEqual(converted, expected_uri)
-
-        # Verify SessionLocal can create and close a session
-        session = SessionLocal()
-        session.close()
-
-        # Verify init_db executes cleanly
-        init_db()
-
         # Save checkpoint with completed category and in-flight category page
         save_checkpoint(
             department="Department of Education",
@@ -486,14 +465,14 @@ class TestRefactoringFixes(unittest.TestCase):
         clear_checkpoint("Department of Education")
 
     def test_database_uri_and_sqlalchemy_setup(self):
-        """Verify dynamic SQLite/Postgres database URI routing and SQLAlchemy initialization."""
+        """Verify dynamic Postgres database URI routing and SQLAlchemy initialization."""
         from database.db import engine, SessionLocal, Base, init_db
         self.assertIsNotNone(engine)
         self.assertIsNotNone(SessionLocal)
         self.assertIsNotNone(Base)
 
-        # Check local URI is sqlite
-        self.assertTrue(config.DATABASE_URI.startswith("sqlite:///"))
+        # Check URI is postgresql
+        self.assertTrue(config.DATABASE_URI.startswith("postgresql://"))
 
         # Verify Vercel Postgres URI formatting
         raw_url = "postgres://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"

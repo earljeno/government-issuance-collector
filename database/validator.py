@@ -7,7 +7,15 @@ import requests
 
 import config
 from config import DEPARTMENTS, REQUEST_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
-from database.db import get_connection, save_issuances_batch, get_failed_pages, log_quarantine, get_quarantine_logs
+from sqlalchemy import select, func, literal, or_
+from database.db import (
+    get_db_session,
+    IssuanceModel,
+    save_issuances_batch,
+    get_failed_pages,
+    log_quarantine,
+    get_quarantine_logs
+)
 from database.models import IssuanceRecord
 
 logger = logging.getLogger(__name__)
@@ -139,26 +147,30 @@ def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]
       - '001, s. 2026' (DepEd)
       - 'DAO 2026-01' (DENR)
     """
-    query = """
-        SELECT department, category, issuance_number, publication_date
-        FROM issuances
-        WHERE issuance_number IS NOT NULL AND issuance_number != ''
-    """
-    params = []
-    if department:
-        query += " AND department = ?"
-        params.append(department)
-
-    with get_connection() as conn:
-        rows = conn.execute(query, params).fetchall()
+    with get_db_session() as session:
+        query = (
+            select(
+                IssuanceModel.department,
+                IssuanceModel.category,
+                IssuanceModel.issuance_number,
+                IssuanceModel.publication_date
+            )
+            .where(
+                IssuanceModel.issuance_number.isnot(None),
+                IssuanceModel.issuance_number != ""
+            )
+        )
+        if department:
+            query = query.where(IssuanceModel.department == department)
+        rows = session.execute(query).all()
 
     grouped = defaultdict(lambda: defaultdict(set))
 
     for row in rows:
-        dept = row["department"]
-        cat = row["category"]
-        num = str(row["issuance_number"]).strip()
-        pub_date = str(row["publication_date"] or "")
+        dept = row.department
+        cat = row.category
+        num = str(row.issuance_number).strip()
+        pub_date = str(row.publication_date or "")
 
         # Try matching YYYY-NNNN (e.g. 2026-0013 or 2025-0029)
         m = re.search(r"\b(20\d{2})-(\d{1,5})\b", num)
@@ -217,11 +229,15 @@ def audit_live_portal_sync(check_departments: Optional[List[str]] = None) -> Lis
     depts_to_check = check_departments if check_departments else list(DEPARTMENTS.keys())
     results = []
 
-    with get_connection() as conn:
-        counts_cursor = conn.execute(
-            "SELECT department, category, count(1) as total FROM issuances GROUP BY department, category"
-        ).fetchall()
-        db_counts = {(r["department"], r["category"]): r["total"] for r in counts_cursor}
+    with get_db_session() as session:
+        counts = session.execute(
+            select(
+                IssuanceModel.department,
+                IssuanceModel.category,
+                func.count(IssuanceModel.id).label("total")
+            ).group_by(IssuanceModel.department, IssuanceModel.category)
+        ).all()
+        db_counts = {(r.department, r.category): r.total for r in counts}
 
     # 1. DOH Live Audit
     if "DOH" in depts_to_check:
@@ -267,11 +283,14 @@ def audit_live_portal_sync(check_departments: Optional[List[str]] = None) -> Lis
                     latest_stored = True
                     if latest_item:
                         doc_num = latest_item.get("issuanceNumber", "").strip()
-                        with get_connection() as conn:
-                            found = conn.execute(
-                                "SELECT 1 FROM issuances WHERE department = ? AND category = ? AND issuance_number = ?",
-                                (dept_name, cat_name, doc_num)
-                            ).fetchone()
+                        with get_db_session() as session:
+                            found = session.scalar(
+                                select(literal(1)).select_from(IssuanceModel).where(
+                                    IssuanceModel.department == dept_name,
+                                    IssuanceModel.category == cat_name,
+                                    IssuanceModel.issuance_number == doc_num
+                                )
+                            )
                             latest_stored = bool(found)
 
                     status = "In Sync" if (latest_stored and stored > 0) else ("New Records Available" if not latest_stored else "Empty")
@@ -323,11 +342,23 @@ def run_full_validation() -> Dict[str, Any]:
     - Live portal comparison
     - Completeness score calculation
     """
-    with get_connection() as conn:
-        total_records = conn.execute("SELECT count(1) FROM issuances").fetchone()[0]
-        missing_titles = conn.execute("SELECT count(1) FROM issuances WHERE title IS NULL OR title = ''").fetchone()[0]
-        missing_urls = conn.execute("SELECT count(1) FROM issuances WHERE source_url IS NULL OR source_url = ''").fetchone()[0]
-        missing_dates = conn.execute("SELECT count(1) FROM issuances WHERE publication_date IS NULL OR publication_date = ''").fetchone()[0]
+    with get_db_session() as session:
+        total_records = session.scalar(select(func.count(IssuanceModel.id))) or 0
+        missing_titles = session.scalar(
+            select(func.count(IssuanceModel.id)).where(
+                or_(IssuanceModel.title.is_(None), IssuanceModel.title == "")
+            )
+        ) or 0
+        missing_urls = session.scalar(
+            select(func.count(IssuanceModel.id)).where(
+                or_(IssuanceModel.source_url.is_(None), IssuanceModel.source_url == "")
+            )
+        ) or 0
+        missing_dates = session.scalar(
+            select(func.count(IssuanceModel.id)).where(
+                or_(IssuanceModel.publication_date.is_(None), IssuanceModel.publication_date == "")
+            )
+        ) or 0
         
     failed_pages = get_failed_pages()
     audit_sequence_gaps()

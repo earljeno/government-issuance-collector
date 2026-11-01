@@ -1,18 +1,30 @@
-import sqlite3
 import json
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from contextlib import contextmanager
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    select,
+    update,
+    delete,
+    func,
+    or_
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 import config
 from config import DATABASE_URI
 from database.models import IssuanceRecord
 
-# Connect to either Local SQLite or Vercel Postgres based on config
-connect_args = {"check_same_thread": False} if (DATABASE_URI and DATABASE_URI.startswith("sqlite")) else {}
-engine = create_engine(DATABASE_URI, connect_args=connect_args)
+# Initialize PostgreSQL engine and session factory
+engine = create_engine(DATABASE_URI, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -81,34 +93,31 @@ class QuarantineLogModel(Base):
 
 
 def get_current_engine():
+    """Returns or refreshes the active SQLAlchemy engine if DATABASE_URI changed."""
+    global engine, SessionLocal
     uri = getattr(config, "DATABASE_URI", DATABASE_URI)
-    db_path = getattr(config, "DATABASE_PATH", None)
-    if uri and uri.startswith("sqlite") and db_path:
-        expected_uri = f"sqlite:///{db_path}"
-        if expected_uri != str(engine.url):
-            return create_engine(expected_uri, connect_args={"check_same_thread": False})
+    if uri and str(engine.url) != uri:
+        engine = create_engine(uri, pool_pre_ping=True)
+        SessionLocal.configure(bind=engine)
     return engine
 
 
+def get_db_session():
+    """Returns a new SQLAlchemy Session bound to the active engine."""
+    get_current_engine()
+    return SessionLocal()
+
+
+@contextmanager
 def get_connection():
-    uri = getattr(config, "DATABASE_URI", DATABASE_URI)
-    if not uri or uri.startswith("sqlite"):
-        db_path = getattr(config, "DATABASE_PATH", config.DATA_DIR / "database.db")
-        conn = sqlite3.connect(db_path, timeout=30.0)
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA busy_timeout = 30000")
-        conn.row_factory = sqlite3.Row
-        return conn
-    else:
-        curr_engine = get_current_engine()
-        return curr_engine.raw_connection()
+    """Yields a raw engine connection context for compatibility."""
+    curr_engine = get_current_engine()
+    with curr_engine.connect() as conn:
+        yield conn
 
 
 def init_db():
-    """Initializes database schema and default rows across SQLite or PostgreSQL."""
-    from sqlalchemy.orm import Session
-    from sqlalchemy import select, update
-
+    """Initializes PostgreSQL database schema and ensures default department rows exist."""
     curr_engine = get_current_engine()
     Base.metadata.create_all(bind=curr_engine)
 
@@ -119,8 +128,7 @@ def init_db():
         "Department of Education"
     ]
 
-    with Session(curr_engine) as session:
-        # Mark any abandoned 'Running' tasks as 'Interrupted' on server start
+    with get_db_session() as session:
         session.execute(
             update(DepartmentStatusModel)
             .where(DepartmentStatusModel.status == "Running")
@@ -135,74 +143,78 @@ def init_db():
                 session.add(DepartmentStatusModel(department=dept, status="Idle", total_records=0))
         session.commit()
 
+
 def save_issuance(record: IssuanceRecord) -> bool:
     """
-    Saves an issuance record. Returns True if inserted, False if duplicate.
-    Preserves original title, issuance number, and metadata.
+    Saves an issuance record using PostgreSQL native ON CONFLICT DO NOTHING.
+    Returns True if inserted, False if duplicate.
     """
     dup_hash = record.generate_duplicate_hash()
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     timestamp = record.extraction_timestamp or now_ts
-    
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                INSERT INTO issuances (
-                    department, category, issuance_number, title,
-                    publication_date, source_url, extraction_timestamp, duplicate_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                record.department,
-                record.category,
-                record.issuance_number,
-                record.title,
-                record.publication_date,
-                record.source_url,
-                timestamp,
-                dup_hash
-            ))
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            # Duplicate record based on duplicate_hash
-            return False
+
+    stmt = (
+        pg_insert(IssuanceModel)
+        .values(
+            department=record.department,
+            category=record.category,
+            issuance_number=record.issuance_number,
+            title=record.title,
+            publication_date=record.publication_date,
+            source_url=record.source_url,
+            extraction_timestamp=timestamp,
+            duplicate_hash=dup_hash
+        )
+        .on_conflict_do_nothing(index_elements=["duplicate_hash"])
+        .returning(IssuanceModel.id)
+    )
+
+    with get_db_session() as session:
+        res = session.execute(stmt)
+        inserted_id = res.scalar_one_or_none()
+        session.commit()
+        return inserted_id is not None
+
 
 def save_issuances_batch(records: List[IssuanceRecord]) -> Tuple[int, int]:
     """
-    Batch inserts records.
+    Batch inserts records via PostgreSQL bulk insert with conflict handling.
     Returns (inserted_count, duplicates_count).
     """
-    inserted = 0
-    duplicates = 0
+    if not records:
+        return 0, 0
+
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        for r in records:
-            dup_hash = r.generate_duplicate_hash()
-            timestamp = r.extraction_timestamp or now_ts
-            try:
-                cursor.execute("""
-                    INSERT INTO issuances (
-                        department, category, issuance_number, title,
-                        publication_date, source_url, extraction_timestamp, duplicate_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    r.department,
-                    r.category,
-                    r.issuance_number,
-                    r.title,
-                    r.publication_date,
-                    r.source_url,
-                    timestamp,
-                    dup_hash
-                ))
-                inserted += 1
-            except sqlite3.IntegrityError:
-                duplicates += 1
-        conn.commit()
-    return inserted, duplicates
+    values_list = []
+    for r in records:
+        dup_hash = r.generate_duplicate_hash()
+        timestamp = r.extraction_timestamp or now_ts
+        values_list.append({
+            "department": r.department,
+            "category": r.category,
+            "issuance_number": r.issuance_number,
+            "title": r.title,
+            "publication_date": r.publication_date,
+            "source_url": r.source_url,
+            "extraction_timestamp": timestamp,
+            "duplicate_hash": dup_hash
+        })
+
+    stmt = (
+        pg_insert(IssuanceModel)
+        .values(values_list)
+        .on_conflict_do_nothing(index_elements=["duplicate_hash"])
+        .returning(IssuanceModel.id)
+    )
+
+    with get_db_session() as session:
+        res = session.execute(stmt)
+        inserted_ids = res.scalars().all()
+        session.commit()
+        inserted = len(inserted_ids)
+        duplicates = len(records) - inserted
+        return inserted, duplicates
+
 
 def get_issuances(
     department: Optional[str] = None,
@@ -213,38 +225,49 @@ def get_issuances(
     offset: Optional[int] = None
 ) -> List[Dict]:
     """Retrieves issuances with optional filters and pagination."""
-    query = "SELECT * FROM issuances WHERE 1=1"
-    params = []
-    
-    if department:
-        query += " AND department = ?"
-        params.append(department)
-    if category:
-        query += " AND category = ?"
-        params.append(category)
-    if year:
-        query += " AND (publication_date LIKE ? OR title LIKE ?)"
-        params.append(f"%{year}%")
-        params.append(f"%{year}%")
-    if search:
-        query += " AND (title LIKE ? OR issuance_number LIKE ?)"
-        params.append(f"%{search}%")
-        params.append(f"%{search}%")
-        
-    query += " ORDER BY id DESC"
-    
-    if limit is not None:
-        query += " LIMIT ?"
-        params.append(limit)
-    if offset is not None:
-        query += " OFFSET ?"
-        params.append(offset)
-        
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+    with get_db_session() as session:
+        query = select(IssuanceModel)
+        if department:
+            query = query.where(IssuanceModel.department == department)
+        if category:
+            query = query.where(IssuanceModel.category == category)
+        if year:
+            query = query.where(
+                or_(
+                    IssuanceModel.publication_date.ilike(f"%{year}%"),
+                    IssuanceModel.title.ilike(f"%{year}%")
+                )
+            )
+        if search:
+            query = query.where(
+                or_(
+                    IssuanceModel.title.ilike(f"%{search}%"),
+                    IssuanceModel.issuance_number.ilike(f"%{search}%")
+                )
+            )
+
+        query = query.order_by(IssuanceModel.id.desc())
+        if limit is not None:
+            query = query.limit(limit)
+        if offset is not None:
+            query = query.offset(offset)
+
+        rows = session.scalars(query).all()
+        return [
+            {
+                "id": r.id,
+                "department": r.department,
+                "category": r.category,
+                "issuance_number": r.issuance_number,
+                "title": r.title,
+                "publication_date": r.publication_date,
+                "source_url": r.source_url,
+                "extraction_timestamp": r.extraction_timestamp,
+                "duplicate_hash": r.duplicate_hash
+            }
+            for r in rows
+        ]
+
 
 def get_issuance_count(
     department: Optional[str] = None,
@@ -253,28 +276,28 @@ def get_issuance_count(
     search: Optional[str] = None
 ) -> int:
     """Returns total count of matching records."""
-    query = "SELECT COUNT(*) as cnt FROM issuances WHERE 1=1"
-    params = []
-    
-    if department:
-        query += " AND department = ?"
-        params.append(department)
-    if category:
-        query += " AND category = ?"
-        params.append(category)
-    if year:
-        query += " AND (publication_date LIKE ? OR title LIKE ?)"
-        params.append(f"%{year}%")
-        params.append(f"%{year}%")
-    if search:
-        query += " AND (title LIKE ? OR issuance_number LIKE ?)"
-        params.append(f"%{search}%")
-        params.append(f"%{search}%")
-        
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        return cursor.fetchone()["cnt"]
+    with get_db_session() as session:
+        query = select(func.count(IssuanceModel.id))
+        if department:
+            query = query.where(IssuanceModel.department == department)
+        if category:
+            query = query.where(IssuanceModel.category == category)
+        if year:
+            query = query.where(
+                or_(
+                    IssuanceModel.publication_date.ilike(f"%{year}%"),
+                    IssuanceModel.title.ilike(f"%{year}%")
+                )
+            )
+        if search:
+            query = query.where(
+                or_(
+                    IssuanceModel.title.ilike(f"%{search}%"),
+                    IssuanceModel.issuance_number.ilike(f"%{search}%")
+                )
+            )
+        return session.scalar(query) or 0
+
 
 def update_department_status(
     department: str,
@@ -284,109 +307,146 @@ def update_department_status(
     total_pages: Optional[str] = None,
     error_message: Optional[str] = None
 ):
-    """Updates runtime progress and status for a department."""
+    """Updates runtime progress and status for a department using PostgreSQL UPSERT."""
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) as cnt FROM issuances WHERE department = ?", (department,))
-        total_records = cursor.fetchone()["cnt"]
-        
-        cursor.execute("""
-            UPDATE department_status
-            SET status = ?,
-                total_records = ?,
-                last_extraction = ?,
-                current_category = COALESCE(?, current_category),
-                current_page = COALESCE(?, current_page),
-                total_pages = COALESCE(?, total_pages),
-                error_message = ?
-            WHERE department = ?
-        """, (
-            status,
-            total_records,
-            now_ts,
-            current_category,
-            current_page,
-            total_pages,
-            error_message,
-            department
-        ))
-        conn.commit()
+    with get_db_session() as session:
+        total_records = session.scalar(
+            select(func.count(IssuanceModel.id)).where(IssuanceModel.department == department)
+        ) or 0
+
+        stmt = (
+            pg_insert(DepartmentStatusModel)
+            .values(
+                department=department,
+                status=status,
+                total_records=total_records,
+                last_extraction=now_ts,
+                current_category=current_category,
+                current_page=current_page or 0,
+                total_pages=total_pages or "Unknown",
+                error_message=error_message
+            )
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["department"],
+            set_={
+                "status": stmt.excluded.status,
+                "total_records": stmt.excluded.total_records,
+                "last_extraction": stmt.excluded.last_extraction,
+                "current_category": func.coalesce(stmt.excluded.current_category, DepartmentStatusModel.current_category),
+                "current_page": func.coalesce(stmt.excluded.current_page, DepartmentStatusModel.current_page),
+                "total_pages": func.coalesce(stmt.excluded.total_pages, DepartmentStatusModel.total_pages),
+                "error_message": stmt.excluded.error_message
+            }
+        )
+        session.execute(stmt)
+        session.commit()
+
 
 def get_all_department_statuses() -> List[Dict]:
     """Returns status cards info for all departments."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM department_status ORDER BY department ASC")
-        rows = cursor.fetchall()
+    with get_db_session() as session:
+        statuses = session.scalars(
+            select(DepartmentStatusModel).order_by(DepartmentStatusModel.department.asc())
+        ).all()
         result = []
-        for r in rows:
-            d = dict(r)
-            # Re-count records to ensure 100% accuracy
-            cursor.execute("SELECT COUNT(*) as cnt FROM issuances WHERE department = ?", (d["department"],))
-            d["total_records"] = cursor.fetchone()["cnt"]
-            result.append(d)
+        for s in statuses:
+            total = session.scalar(
+                select(func.count(IssuanceModel.id)).where(IssuanceModel.department == s.department)
+            ) or 0
+            result.append({
+                "department": s.department,
+                "status": s.status,
+                "total_records": total,
+                "last_extraction": s.last_extraction,
+                "error_message": s.error_message,
+                "current_category": s.current_category,
+                "current_page": s.current_page,
+                "total_pages": s.total_pages
+            })
         return result
+
 
 def record_failed_page(department: str, category: str, url: str, error_message: str):
     """Logs a failed page for retry."""
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO failed_pages (department, category, url, error_message, timestamp, retry_count)
-            VALUES (?, ?, ?, ?, ?, 0)
-        """, (department, category, url, error_message, now_ts))
-        conn.commit()
+    with get_db_session() as session:
+        session.add(
+            FailedPageModel(
+                department=department,
+                category=category,
+                url=url,
+                error_message=error_message,
+                timestamp=now_ts,
+                retry_count=0
+            )
+        )
+        session.commit()
+
 
 def get_failed_pages(department: Optional[str] = None) -> List[Dict]:
     """Retrieves all failed pages."""
-    query = "SELECT * FROM failed_pages WHERE 1=1"
-    params = []
-    if department:
-        query += " AND department = ?"
-        params.append(department)
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        return [dict(r) for r in cursor.fetchall()]
+    with get_db_session() as session:
+        query = select(FailedPageModel)
+        if department:
+            query = query.where(FailedPageModel.department == department)
+        rows = session.scalars(query).all()
+        return [
+            {
+                "id": r.id,
+                "department": r.department,
+                "category": r.category,
+                "url": r.url,
+                "error_message": r.error_message,
+                "timestamp": r.timestamp,
+                "retry_count": r.retry_count
+            }
+            for r in rows
+        ]
+
 
 def clear_failed_page(failed_id: int):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM failed_pages WHERE id = ?", (failed_id,))
-        conn.commit()
+    """Removes a failed page entry once resolved."""
+    with get_db_session() as session:
+        session.execute(delete(FailedPageModel).where(FailedPageModel.id == failed_id))
+        session.commit()
+
 
 def delete_all_issuances(department: Optional[str] = None):
     """Cleans issuances table for a given department or all."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with get_db_session() as session:
         if department:
-            cursor.execute("DELETE FROM issuances WHERE department = ?", (department,))
-            cursor.execute("UPDATE department_status SET total_records = 0 WHERE department = ?", (department,))
+            session.execute(delete(IssuanceModel).where(IssuanceModel.department == department))
+            session.execute(
+                update(DepartmentStatusModel)
+                .where(DepartmentStatusModel.department == department)
+                .values(total_records=0)
+            )
         else:
-            cursor.execute("DELETE FROM issuances")
-            cursor.execute("UPDATE department_status SET total_records = 0")
-        conn.commit()
+            session.execute(delete(IssuanceModel))
+            session.execute(update(DepartmentStatusModel).values(total_records=0))
+        session.commit()
+
 
 def remove_duplicates_cleanup() -> int:
     """
     Explicit database duplicate scrubber.
     Finds and deletes any records with matching duplicate hash, keeping lowest id.
     """
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            DELETE FROM issuances
-            WHERE id NOT IN (
-                SELECT MIN(id)
-                FROM issuances
-                GROUP BY duplicate_hash
-            )
-        """)
-        deleted = cursor.rowcount
-        conn.commit()
-    return deleted
+    with get_db_session() as session:
+        subquery = (
+            select(func.min(IssuanceModel.id))
+            .where(IssuanceModel.duplicate_hash.isnot(None))
+            .group_by(IssuanceModel.duplicate_hash)
+        )
+        stmt = delete(IssuanceModel).where(
+            IssuanceModel.duplicate_hash.isnot(None),
+            IssuanceModel.id.not_in(subquery)
+        )
+        res = session.execute(stmt)
+        session.commit()
+        return res.rowcount or 0
+
 
 def save_checkpoint(
     department: str,
@@ -396,128 +456,166 @@ def save_checkpoint(
     completed_categories: Optional[List[str]] = None,
     category_pages: Optional[Dict] = None
 ):
-    """Saves or updates progress checkpoint for seamless continuation."""
+    """Saves or updates progress checkpoint for seamless continuation via PostgreSQL UPSERT."""
     completed_json = json.dumps(completed_categories or [])
     category_pages_json = json.dumps(category_pages or {})
     now_ts = datetime.now().isoformat()
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO extraction_checkpoints (department, category, page, url, completed_categories, updated_at, category_pages)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(department) DO UPDATE SET
-                category = excluded.category,
-                page = excluded.page,
-                url = excluded.url,
-                completed_categories = excluded.completed_categories,
-                updated_at = excluded.updated_at,
-                category_pages = excluded.category_pages
-        """, (department, category, page, url, completed_json, now_ts, category_pages_json))
-        conn.commit()
+
+    stmt = (
+        pg_insert(ExtractionCheckpointModel)
+        .values(
+            department=department,
+            category=category,
+            page=page,
+            url=url,
+            completed_categories=completed_json,
+            updated_at=now_ts,
+            category_pages=category_pages_json
+        )
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["department"],
+        set_={
+            "category": stmt.excluded.category,
+            "page": stmt.excluded.page,
+            "url": stmt.excluded.url,
+            "completed_categories": stmt.excluded.completed_categories,
+            "updated_at": stmt.excluded.updated_at,
+            "category_pages": stmt.excluded.category_pages
+        }
+    )
+    with get_db_session() as session:
+        session.execute(stmt)
+        session.commit()
+
 
 def get_checkpoint(department: str) -> Optional[Dict]:
     """Retrieves active checkpoint for a department."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM extraction_checkpoints WHERE department = ?", (department,))
-        row = cursor.fetchone()
-        if row:
-            d = dict(row)
-            try:
-                d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
-            except Exception:
-                d["completed_categories"] = []
-            try:
-                d["category_pages"] = json.loads(d.get("category_pages") or "{}")
-            except Exception:
-                d["category_pages"] = {}
-            return d
-    return None
+    with get_db_session() as session:
+        cp = session.scalar(
+            select(ExtractionCheckpointModel).where(ExtractionCheckpointModel.department == department)
+        )
+        if not cp:
+            return None
+        res = {
+            "department": cp.department,
+            "category": cp.category,
+            "page": cp.page,
+            "url": cp.url,
+            "updated_at": cp.updated_at
+        }
+        try:
+            res["completed_categories"] = json.loads(cp.completed_categories or "[]")
+        except Exception:
+            res["completed_categories"] = []
+        try:
+            res["category_pages"] = json.loads(cp.category_pages or "{}")
+        except Exception:
+            res["category_pages"] = {}
+        return res
+
 
 def get_all_checkpoints() -> Dict[str, Dict]:
     """Retrieves all active checkpoints across departments."""
     results = {}
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM extraction_checkpoints")
-        for row in cursor.fetchall():
-            d = dict(row)
+    with get_db_session() as session:
+        rows = session.scalars(select(ExtractionCheckpointModel)).all()
+        for cp in rows:
+            d = {
+                "department": cp.department,
+                "category": cp.category,
+                "page": cp.page,
+                "url": cp.url,
+                "updated_at": cp.updated_at
+            }
             try:
-                d["completed_categories"] = json.loads(d.get("completed_categories") or "[]")
+                d["completed_categories"] = json.loads(cp.completed_categories or "[]")
             except Exception:
                 d["completed_categories"] = []
             try:
-                d["category_pages"] = json.loads(d.get("category_pages") or "{}")
+                d["category_pages"] = json.loads(cp.category_pages or "{}")
             except Exception:
                 d["category_pages"] = {}
-            results[d["department"]] = d
+            results[cp.department] = d
     return results
+
 
 def clear_checkpoint(department: str):
     """Clears checkpoint upon successful completion of all categories."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM extraction_checkpoints WHERE department = ?", (department,))
-        conn.commit()
+    with get_db_session() as session:
+        session.execute(
+            delete(ExtractionCheckpointModel).where(ExtractionCheckpointModel.department == department)
+        )
+        session.commit()
 
 
 def log_quarantine(department: str, category: str, issue_type: str, details: str, source_url: str = "") -> Optional[int]:
     """
     Records skipped items, missing metadata, or sequence gaps into quarantine_logs.
-    Uses INSERT OR IGNORE based on (department, category, issue_type, details) to prevent duplicates.
+    Uses PostgreSQL ON CONFLICT DO NOTHING based on uq_quarantine_log to prevent duplicate entries.
     Returns the inserted log ID, or None if skipped as duplicate.
     """
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR IGNORE INTO quarantine_logs (
-                department, category, issue_type, details, source_url, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, 'Pending', ?)
-        """, (department or "", category or "", issue_type or "", details or "", source_url or "", created_at))
-        conn.commit()
-        return cursor.lastrowid if cursor.rowcount > 0 else None
+    stmt = (
+        pg_insert(QuarantineLogModel)
+        .values(
+            department=department or "",
+            category=category or "",
+            issue_type=issue_type or "",
+            details=details or "",
+            source_url=source_url or "",
+            status="Pending",
+            created_at=created_at
+        )
+        .on_conflict_do_nothing(constraint="uq_quarantine_log")
+        .returning(QuarantineLogModel.id)
+    )
+
+    with get_db_session() as session:
+        res = session.execute(stmt)
+        inserted_id = res.scalar_one_or_none()
+        session.commit()
+        return inserted_id
 
 
 def get_quarantine_logs(status: Optional[str] = "Pending") -> List[Dict]:
     """Retrieves quarantine logs filtered by status (default 'Pending'). If status is None or 'all', returns all logs."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with get_db_session() as session:
+        query = select(QuarantineLogModel).order_by(QuarantineLogModel.id.desc())
         if status and status.lower() != "all":
-            cursor.execute("""
-                SELECT id, department, category, issue_type, details, source_url, status, created_at, resolved_at
-                FROM quarantine_logs
-                WHERE status = ?
-                ORDER BY id DESC
-            """, (status,))
-        else:
-            cursor.execute("""
-                SELECT id, department, category, issue_type, details, source_url, status, created_at, resolved_at
-                FROM quarantine_logs
-                ORDER BY id DESC
-            """)
-        return [dict(row) for row in cursor.fetchall()]
+            query = query.where(QuarantineLogModel.status == status)
+        rows = session.scalars(query).all()
+        return [
+            {
+                "id": r.id,
+                "department": r.department,
+                "category": r.category,
+                "issue_type": r.issue_type,
+                "details": r.details,
+                "source_url": r.source_url,
+                "status": r.status,
+                "created_at": r.created_at,
+                "resolved_at": r.resolved_at
+            }
+            for r in rows
+        ]
 
 
 def resolve_quarantine_log(log_id: int, status: str = "Resolved") -> bool:
     """Updates status of a quarantine log to 'Resolved' or 'Ignored' with resolved timestamp."""
     resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE quarantine_logs
-            SET status = ?, resolved_at = ?
-            WHERE id = ?
-        """, (status, resolved_at, log_id))
-        conn.commit()
-        return cursor.rowcount > 0
+    with get_db_session() as session:
+        res = session.execute(
+            update(QuarantineLogModel)
+            .where(QuarantineLogModel.id == log_id)
+            .values(status=status, resolved_at=resolved_at)
+        )
+        session.commit()
+        return (res.rowcount or 0) > 0
 
 
 def clear_quarantine_logs():
     """Clears all quarantine logs (used primarily for test isolation)."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM quarantine_logs")
-        cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'quarantine_logs'")
-        conn.commit()
-
+    with get_db_session() as session:
+        session.execute(delete(QuarantineLogModel))
+        session.commit()

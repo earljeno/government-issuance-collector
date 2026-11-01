@@ -1,53 +1,34 @@
 import os
 import tempfile
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
 
+# Load environment variables from .env if present
+load_dotenv(BASE_DIR / ".env")
+
 # Detect if we are running on Vercel
 IS_VERCEL = os.environ.get("VERCEL") == "1"
 
-# 1. FILE STORAGE ROUTING
+# 1. File storage routing
 if IS_VERCEL:
-    # Vercel requires writing to /tmp
     DATA_DIR = Path(tempfile.gettempdir()) / "data"
 else:
-    # Local development writes to the project folder
     DATA_DIR = Path(__file__).parent / "data"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 EXPORTS_DIR = DATA_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# 2. DATABASE ROUTING
-if IS_VERCEL:
-    # Use Vercel Postgres in production (must use postgresql:// for SQLAlchemy)
-    raw_url = os.environ.get("POSTGRES_URL", "")
-    DATABASE_PATH = DATA_DIR / "database.db"
-    if raw_url:
-        DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
-    else:
-        DATABASE_URI = f"sqlite:///{DATABASE_PATH}"
-else:
-    # Use SQLite locally
-    DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_DIR / "database.db")))
-    DATABASE_URI = f"sqlite:///{DATABASE_PATH}"
-
-DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-# Migrate legacy database files if database.db does not exist yet
-legacy_db = BASE_DIR / "database" / "issuances.db"
-legacy_data_db = DATA_DIR / "issuances.db"
-if not DATABASE_PATH.exists():
-    for old_db in [legacy_data_db, legacy_db]:
-        if old_db.exists():
-            try:
-                import shutil
-                shutil.copy2(old_db, DATABASE_PATH)
-                break
-            except Exception:
-                pass
+# 2. Database routing (PostgreSQL via SQLAlchemy)
+raw_url = (
+    os.environ.get("POSTGRES_URL")
+    or os.environ.get("DATABASE_URL")
+    or "postgresql://postgres:postgres@localhost:5432/government_issuances"
+)
+DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
 
 # Application Settings
 APP_HOST = "127.0.0.1"
@@ -71,6 +52,7 @@ DEPARTMENTS = {
         "name": "Department of Agriculture",
         "code": "DA",
         "base_url": "https://www.da.gov.ph/",
+        "portal_url": "https://www.da.gov.ph/",
         "categories": {
             "Administrative Orders": "https://www.da.gov.ph/laws-and-issuances/administrative-orders/",
             "Administrative Circulars": "https://www.da.gov.ph/laws-and-issuances/administrative-circulars/",
@@ -94,6 +76,7 @@ DEPARTMENTS = {
         "name": "Department of Health",
         "code": "DOH",
         "base_url": "https://app.doh.gov.ph:1024/",
+        "portal_url": "https://doh.gov.ph/",
         "categories": {
             "Administrative Orders": "KMITS_AISAO",
             "Department Circulars": "KMITS_AISDC",
@@ -110,6 +93,7 @@ DEPARTMENTS = {
         "name": "Department of Environment and Natural Resources",
         "code": "DENR",
         "base_url": "https://denr.gov.ph/",
+        "portal_url": "https://denr.gov.ph/",
         "categories": {
             "Administrative Orders": "https://denr.gov.ph/laws-and-policies/administrative-orders/",
             "Memorandum Circulars": "https://denr.gov.ph/laws-and-policies/memorandum-circulars/",
@@ -127,6 +111,7 @@ DEPARTMENTS = {
         "name": "Department of Education",
         "code": "DepEd",
         "base_url": "https://www.deped.gov.ph/",
+        "portal_url": "https://www.deped.gov.ph/",
         "categories": {
             "DepEd Advisories": "https://www.deped.gov.ph/category/issuances/deped-advisories/",
             "DepEd Memoranda": "https://www.deped.gov.ph/category/issuances/deped-memoranda/",

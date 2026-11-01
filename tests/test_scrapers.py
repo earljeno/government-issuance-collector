@@ -4,7 +4,9 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 import config
 # Use an isolated test database so production/user records are never wiped
-config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
+    "/government_issuances", "/government_issuances_test"
+)
 
 from scrapers.da import DAScraper
 from scrapers.deped import DepEdScraper
@@ -32,7 +34,9 @@ class TestScrapersAndApp(unittest.TestCase):
     def setUpClass(cls):
         import config
         # Use an isolated test database so production/user records are never wiped
-        config.DATABASE_PATH = config.BASE_DIR / "database" / "test_issuances.db"
+        config.DATABASE_URI = os.environ.get("TEST_DATABASE_URL") or config.DATABASE_URI.replace(
+    "/government_issuances", "/government_issuances_test"
+)
         init_db()
 
     def setUp(self):
