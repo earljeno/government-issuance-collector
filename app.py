@@ -35,6 +35,7 @@ from scrapers.manual_url import ManualURLExtractor
 from exporters.word_exporter import generate_word_document
 from exporters.excel_exporter import generate_excel_document
 from exporters.csv_exporter import generate_csv_document, generate_txt_document
+from pin_gateway import pin_blueprint
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.register_blueprint(pin_blueprint)
 init_db()
 
 # Global background worker state
