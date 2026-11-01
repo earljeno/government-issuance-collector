@@ -106,34 +106,34 @@ def get_connection():
 
 def init_db():
     """Initializes database schema and default rows across SQLite or PostgreSQL."""
+    from sqlalchemy.orm import Session
+    from sqlalchemy import select, update
+
     curr_engine = get_current_engine()
     Base.metadata.create_all(bind=curr_engine)
 
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    default_depts = [
+        "Department of Agriculture",
+        "Department of Health",
+        "Department of Environment and Natural Resources",
+        "Department of Education"
+    ]
 
+    with Session(curr_engine) as session:
         # Mark any abandoned 'Running' tasks as 'Interrupted' on server start
-        cursor.execute("""
-            UPDATE department_status
-            SET status = 'Interrupted',
-                error_message = 'Interrupted by server restart or shutdown. Click Resume to continue.'
-            WHERE status = 'Running'
-        """)
-
-        # Initialize default department statuses if not present
-        default_depts = [
-            "Department of Agriculture",
-            "Department of Health",
-            "Department of Environment and Natural Resources",
-            "Department of Education"
-        ]
+        session.execute(
+            update(DepartmentStatusModel)
+            .where(DepartmentStatusModel.status == "Running")
+            .values(
+                status="Interrupted",
+                error_message="Interrupted by server restart or shutdown. Click Resume to continue."
+            )
+        )
+        existing_depts = set(session.scalars(select(DepartmentStatusModel.department)).all())
         for dept in default_depts:
-            cursor.execute("""
-                INSERT OR IGNORE INTO department_status (department, status, total_records)
-                VALUES (?, 'Idle', 0)
-            """, (dept,))
-
-        conn.commit()
+            if dept not in existing_depts:
+                session.add(DepartmentStatusModel(department=dept, status="Idle", total_records=0))
+        session.commit()
 
 def save_issuance(record: IssuanceRecord) -> bool:
     """

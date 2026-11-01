@@ -24,8 +24,11 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 if IS_VERCEL:
     # Use Vercel Postgres in production (must use postgresql:// for SQLAlchemy)
     raw_url = os.environ.get("POSTGRES_URL", "")
-    DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
     DATABASE_PATH = DATA_DIR / "database.db"
+    if raw_url:
+        DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
+    else:
+        DATABASE_URI = f"sqlite:///{DATABASE_PATH}"
 else:
     # Use SQLite locally
     DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_DIR / "database.db")))
