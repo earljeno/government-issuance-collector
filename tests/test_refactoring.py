@@ -2,6 +2,7 @@ import os
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 from docx import Document
 
 import config
@@ -230,6 +231,40 @@ class TestRefactoringFixes(unittest.TestCase):
         records = scraper._parse_category_page(html, "Administrative Orders", "https://da.gov.ph")
         # Row with both empty title and code must be discarded
         self.assertEqual(len(records), 0)
+
+    def test_save_document_localhost(self):
+        """save_document on localhost writes to local DATA_DIR and returns local file path."""
+        import storage
+        test_bytes = b"Sample document content for testing localhost"
+        test_filename = "test_doc_local.pdf"
+
+        with patch.object(storage, "IS_VERCEL", False):
+            result_path = storage.save_document(test_bytes, test_filename)
+            self.assertTrue(os.path.exists(result_path))
+            self.assertEqual(result_path, str(storage.DATA_DIR / test_filename))
+            with open(result_path, "rb") as f:
+                self.assertEqual(f.read(), test_bytes)
+            os.remove(result_path)
+
+    def test_save_document_vercel(self):
+        """save_document on Vercel uploads to Vercel Blob and unlinks temporary file."""
+        import storage
+        test_bytes = b"Sample document content for Vercel deployment"
+        test_filename = "test_doc_vercel.pdf"
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"url": "https://blob.vercel-storage.com/test_doc_vercel.pdf"}
+
+        with patch.object(storage, "IS_VERCEL", True), \
+             patch.dict(os.environ, {"BLOB_READ_WRITE_TOKEN": "mock-blob-token"}), \
+             patch("requests.put", return_value=mock_resp) as mock_put:
+
+            blob_url = storage.save_document(test_bytes, test_filename)
+            self.assertEqual(blob_url, "https://blob.vercel-storage.com/test_doc_vercel.pdf")
+            mock_put.assert_called_once()
+            temp_path = storage.DATA_DIR / test_filename
+            self.assertFalse(temp_path.exists())
 
 
 if __name__ == "__main__":
