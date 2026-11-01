@@ -23,8 +23,19 @@ import config
 from config import DATABASE_URI
 from database.models import IssuanceRecord
 
-# Initialize PostgreSQL engine and session factory
-engine = create_engine(DATABASE_URI, pool_pre_ping=True)
+# Optimized engine configuration for Supabase / Supavisor / PgBouncer connection poolers:
+# - pool_size=2 and max_overflow=3 prevent exhausting Session mode client limits (port 5432).
+# - prepare_threshold=None disables statement caching, enabling Transaction mode (port 6543).
+# - pool_pre_ping and pool_recycle prevent stale connection drops.
+ENGINE_KWARGS = {
+    "pool_size": 2,
+    "max_overflow": 3,
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+    "connect_args": {"prepare_threshold": None}
+}
+
+engine = create_engine(DATABASE_URI, **ENGINE_KWARGS)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -97,7 +108,7 @@ def get_current_engine():
     global engine, SessionLocal
     uri = getattr(config, "DATABASE_URI", DATABASE_URI)
     if uri and str(engine.url) != uri:
-        engine = create_engine(uri, pool_pre_ping=True)
+        engine = create_engine(uri, **ENGINE_KWARGS)
         SessionLocal.configure(bind=engine)
     return engine
 
