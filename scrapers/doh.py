@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS, REQUEST_DELAY_SECONDS, REQUEST_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
 from database.models import IssuanceRecord
-from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
+from database.db import save_checkpoint, get_checkpoint, clear_checkpoint, log_quarantine
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,8 @@ class DOHScraper(BaseScraper):
             subject = fallback if fallback else (doc_num or "")
 
         if not subject and not doc_num:
+            details = f"DOH record lacks subject and issuance number. Doc ID: {doc_id}, Type: {doc_type}, Date: {raw_date}"
+            log_quarantine(self.department_name, cat_name, "Missing Metadata", details, f"{self.base_url}/Rest/GetFile?id={doc_id}" if doc_id else "")
             return None
 
         # Parse publication date and apply boundary checks
@@ -191,7 +193,7 @@ class DOHScraper(BaseScraper):
                     pub_date = dt.strftime("%Y-%m-%d")
 
         file_url = f"{self.base_url}/Rest/GetFile?id={doc_id}" if doc_id else ""
-        self.check_url_academic_provenance(file_url, self.department_code)
+        self.check_url_academic_provenance(file_url, self.department_code, category=cat_name, department_name=self.department_name)
 
         return IssuanceRecord(
             department=self.department_name,
@@ -397,10 +399,14 @@ class DOHScraper(BaseScraper):
                 )
 
                 if not title_text and not num_text:
+                    details = f"DOH HTML row lacks both title and number. Date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, source_url)
                     continue
 
                 final_title = title_text or num_text
                 if not final_title:
+                    details = f"DOH HTML row missing title. Number: '{num_text}', Date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, source_url)
                     continue
 
                 if year_filter:
@@ -421,7 +427,7 @@ class DOHScraper(BaseScraper):
                         if candidate != source_url:
                             full_link = candidate
 
-                self.check_url_academic_provenance(full_link, self.department_code)
+                self.check_url_academic_provenance(full_link, self.department_code, category=category_name, department_name=self.department_name)
 
                 records.append(IssuanceRecord(
                     department=self.department_name,

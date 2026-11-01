@@ -13,7 +13,9 @@ from scrapers.da import DAScraper
 from scrapers.doh import DOHScraper
 from database.models import IssuanceRecord
 from database.validator import sanitize_publication_date
+from database.db import log_quarantine, get_quarantine_logs, resolve_quarantine_log, clear_quarantine_logs
 from exporters.word_exporter import add_hyperlink, generate_word_document
+from app import app
 
 
 class TestRefactoringFixes(unittest.TestCase):
@@ -265,6 +267,116 @@ class TestRefactoringFixes(unittest.TestCase):
             mock_put.assert_called_once()
             temp_path = storage.DATA_DIR / test_filename
             self.assertFalse(temp_path.exists())
+
+    def test_quarantine_db_operations(self):
+        """Verify quarantine insertion, deduplication, retrieval, and status resolution."""
+        clear_quarantine_logs()
+
+        # Insert quarantine entry
+        log_id = log_quarantine(
+            department="DA",
+            category="Administrative Orders",
+            issue_type="Missing Metadata",
+            details="Row discarded due to missing title and issuance number",
+            source_url="https://www.da.gov.ph/laws-and-issuances/"
+        )
+        self.assertIsNotNone(log_id)
+
+        # INSERT OR IGNORE deduplication check
+        dup_id = log_quarantine(
+            department="DA",
+            category="Administrative Orders",
+            issue_type="Missing Metadata",
+            details="Row discarded due to missing title and issuance number",
+            source_url="https://www.da.gov.ph/laws-and-issuances/"
+        )
+        self.assertIsNone(dup_id)
+
+        # Retrieve pending logs
+        pending = get_quarantine_logs(status="Pending")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["department"], "DA")
+        self.assertEqual(pending[0]["issue_type"], "Missing Metadata")
+        self.assertEqual(pending[0]["status"], "Pending")
+
+        # Resolve log
+        success = resolve_quarantine_log(log_id, status="Resolved")
+        self.assertTrue(success)
+
+        # Pending should now be empty
+        self.assertEqual(len(get_quarantine_logs(status="Pending")), 0)
+
+        # Resolved list should contain the record
+        resolved = get_quarantine_logs(status="Resolved")
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0]["status"], "Resolved")
+        self.assertIsNotNone(resolved[0]["resolved_at"])
+
+    def test_quarantine_api_endpoints(self):
+        """Verify GET /api/quarantine and POST /api/quarantine/<id>/resolve endpoints."""
+        clear_quarantine_logs()
+        log_id = log_quarantine(
+            department="DepEd",
+            category="DepEd Orders",
+            issue_type="Sequence Gap",
+            details="Missing issuance number: DO-2024-005",
+            source_url=""
+        )
+
+        with app.test_client() as client:
+            # Fetch pending logs
+            res = client.get("/api/quarantine")
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["count"], 1)
+            self.assertEqual(data["logs"][0]["department"], "DepEd")
+
+            # Resolve item
+            post_res = client.post(f"/api/quarantine/{log_id}/resolve", json={"status": "Resolved"})
+            self.assertEqual(post_res.status_code, 200)
+            post_data = post_res.get_json()
+            self.assertTrue(post_data["success"])
+
+            # Verify pending is now 0
+            res2 = client.get("/api/quarantine?status=Pending")
+            data2 = res2.get_json()
+            self.assertEqual(data2["count"], 0)
+
+            # Test invalid status
+            bad_status_res = client.post(f"/api/quarantine/{log_id}/resolve", json={"status": "InvalidStatus"})
+            self.assertEqual(bad_status_res.status_code, 400)
+
+            # Test nonexistent ID
+            not_found_res = client.post("/api/quarantine/999999/resolve", json={"status": "Resolved"})
+            self.assertEqual(not_found_res.status_code, 404)
+
+    def test_scraper_quarantine_on_missing_metadata_and_provenance(self):
+        """Verify scrapers log quarantine records when skipping invalid rows or detecting non-academic URLs."""
+        clear_quarantine_logs()
+        scraper = DAScraper()
+
+        # Trigger provenance warning and quarantine
+        scraper.check_url_academic_provenance(
+            "https://drive.google.com/file/d/12345/view",
+            department="DA",
+            category="Administrative Orders"
+        )
+
+        # Trigger missing metadata quarantine by parsing empty row
+        html = """
+        <table class="tablepress">
+            <tbody>
+                <tr><td></td><td></td><td>2026</td></tr>
+            </tbody>
+        </table>
+        """
+        scraper._parse_category_page(html, "Administrative Orders", "https://da.gov.ph")
+
+        logs = get_quarantine_logs(status="Pending")
+        issue_types = {item["issue_type"] for item in logs}
+        self.assertIn("Non-Academic URL", issue_types)
+        self.assertIn("Missing Metadata", issue_types)
 
 
 if __name__ == "__main__":

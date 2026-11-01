@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
 from database.models import IssuanceRecord
+from database.db import log_quarantine
 
 logger = logging.getLogger(__name__)
 
@@ -165,12 +166,16 @@ class DENRScraper(BaseScraper):
                 date_text = cells[date_col].get_text(strip=True) if date_col is not None and date_col < len(cells) else ""
 
                 if not title_text and not num_text:
+                    details = f"DENR table row lacks both title and number. Date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, source_url)
                     continue
 
                 # Clean up title: normalize whitespace
                 clean_title = re.sub(r'\s+', ' ', title_text).strip()
                 final_title = clean_title or num_text
                 if not final_title:
+                    details = f"DENR table row missing title. Number: '{num_text}', Date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, source_url)
                     continue
 
                 # Apply year filter if requested
@@ -189,7 +194,7 @@ class DENRScraper(BaseScraper):
                         if candidate != source_url:
                             full_link = candidate
 
-                self.check_url_academic_provenance(full_link, self.department_code)
+                self.check_url_academic_provenance(full_link, self.department_code, category=category_name, department_name=self.department_name)
 
                 records.append(IssuanceRecord(
                     department=self.department_name,
@@ -215,6 +220,8 @@ class DENRScraper(BaseScraper):
 
                 raw_title = a_tag.get_text(strip=True)
                 if not raw_title:
+                    details = f"DENR file block lacks title text"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, source_url)
                     continue
 
                 raw_href = a_tag.get("href", "").strip()
@@ -224,7 +231,7 @@ class DENRScraper(BaseScraper):
                     if candidate != source_url:
                         file_url = candidate
 
-                self.check_url_academic_provenance(file_url, self.department_code)
+                self.check_url_academic_provenance(file_url, self.department_code, category=category_name, department_name=self.department_name)
 
                 m_num = re.search(r'(?:DAO|DMC|DMO|JMC|JAO)?[\s_-]*((?:20\d\d|19\d\d)[-_]\d+[\w-]*)', raw_title, re.IGNORECASE)
                 iss_num = m_num.group(0).strip() if m_num else ""

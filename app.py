@@ -20,7 +20,9 @@ from database.db import (
     save_issuances_batch,
     get_all_checkpoints,
     get_checkpoint,
-    clear_checkpoint
+    clear_checkpoint,
+    get_quarantine_logs,
+    resolve_quarantine_log
 )
 from database.models import IssuanceRecord
 from database.validator import run_full_validation, backfill_missing_doh_records
@@ -394,6 +396,42 @@ def clear_records():
 def failed_pages_endpoint():
     failed = get_failed_pages()
     return jsonify({"failed_pages": failed})
+
+@app.route("/api/quarantine", methods=["GET"])
+def api_quarantine():
+    try:
+        status = request.args.get("status", "Pending")
+        logs = get_quarantine_logs(status=status)
+        return jsonify({
+            "success": True,
+            "logs": logs,
+            "count": len(logs)
+        })
+    except Exception as exc:
+        logger.exception("Error fetching quarantine logs: %s", exc)
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+@app.route("/api/quarantine/<int:log_id>/resolve", methods=["POST"])
+def api_resolve_quarantine(log_id: int):
+    try:
+        data = request.get_json(silent=True) or {}
+        status = data.get("status", "Resolved")
+        if status not in ["Resolved", "Ignored", "Pending"]:
+            return jsonify({"success": False, "message": f"Invalid status: {status}"}), 400
+
+        success = resolve_quarantine_log(log_id, status)
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Quarantine log #{log_id} marked as {status}."
+            })
+        return jsonify({
+            "success": False,
+            "message": f"Quarantine log #{log_id} not found."
+        }), 404
+    except Exception as exc:
+        logger.exception("Error resolving quarantine log %s: %s", log_id, exc)
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 @app.route("/api/manual-url/preview", methods=["POST"])
 def manual_url_preview():

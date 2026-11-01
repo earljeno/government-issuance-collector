@@ -59,21 +59,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Validation & Reconciliation Modal elements
     const btnValidateRecords = document.getElementById("btn-validate-records");
+    const quarantineBadge = document.getElementById("quarantine-badge");
     const modalValidate = document.getElementById("modal-validate");
     const modalValidateClose = document.getElementById("modal-validate-close");
     const btnRunValidation = document.getElementById("btn-run-validation");
     const btnReconcileBackfill = document.getElementById("btn-reconcile-backfill");
     const tabBtnPortal = document.getElementById("tab-btn-portal");
-    const tabBtnGaps = document.getElementById("tab-btn-gaps");
+    const tabBtnQuarantine = document.getElementById("tab-btn-quarantine");
     const panelPortal = document.getElementById("panel-portal-reconciliation");
-    const panelGaps = document.getElementById("panel-sequence-gaps");
+    const panelQuarantine = document.getElementById("panel-quarantine-logs");
     const valIntegrityScore = document.getElementById("val-integrity-score");
     const valTotalRecords = document.getElementById("val-total-records");
     const valDetectedGaps = document.getElementById("val-detected-gaps");
     const valFailedPages = document.getElementById("val-failed-pages");
     const valLastChecked = document.getElementById("val-last-checked");
     const valPortalTbody = document.getElementById("val-portal-tbody");
-    const valGapsTbody = document.getElementById("val-gaps-tbody");
+    const valQuarantineTbody = document.getElementById("val-quarantine-tbody");
+    const valQuarantineTabCount = document.getElementById("val-quarantine-tab-count");
 
     // Toast helper
     function showToast(msg, duration = 3500) {
@@ -815,6 +817,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnValidateRecords.addEventListener("click", () => {
             modalValidate.style.display = "flex";
             loadValidationReport();
+            loadQuarantineLogs();
         });
     }
 
@@ -830,20 +833,128 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    if (tabBtnPortal && tabBtnGaps) {
+    if (tabBtnPortal && tabBtnQuarantine) {
         tabBtnPortal.addEventListener("click", () => {
-            panelPortal.style.display = "block";
-            panelGaps.style.display = "none";
+            if (panelPortal) panelPortal.style.display = "block";
+            if (panelQuarantine) panelQuarantine.style.display = "none";
             tabBtnPortal.style.borderBottom = "2px solid var(--primary, #38bdf8)";
-            tabBtnGaps.style.borderBottom = "none";
+            tabBtnQuarantine.style.borderBottom = "none";
         });
 
-        tabBtnGaps.addEventListener("click", () => {
-            panelPortal.style.display = "none";
-            panelGaps.style.display = "block";
-            tabBtnGaps.style.borderBottom = "2px solid var(--primary, #38bdf8)";
+        tabBtnQuarantine.addEventListener("click", () => {
+            if (panelPortal) panelPortal.style.display = "none";
+            if (panelQuarantine) panelQuarantine.style.display = "block";
+            tabBtnQuarantine.style.borderBottom = "2px solid var(--primary, #38bdf8)";
             tabBtnPortal.style.borderBottom = "none";
+            loadQuarantineLogs();
         });
+    }
+
+    async function fetchQuarantineSummary() {
+        try {
+            const res = await fetch("/api/quarantine?status=Pending");
+            const data = await res.json();
+            if (data.success) {
+                const count = data.count || 0;
+                if (quarantineBadge) {
+                    quarantineBadge.textContent = count;
+                    quarantineBadge.style.display = count > 0 ? "inline-flex" : "none";
+                }
+                if (valQuarantineTabCount) {
+                    valQuarantineTabCount.textContent = count;
+                }
+                if (valDetectedGaps) {
+                    valDetectedGaps.textContent = count;
+                }
+            }
+        } catch (err) {
+            console.warn("Could not load quarantine summary badge:", err);
+        }
+    }
+
+    async function loadQuarantineLogs() {
+        if (!valQuarantineTbody) return;
+        try {
+            const res = await fetch("/api/quarantine?status=Pending");
+            const data = await res.json();
+            if (!data.success) {
+                valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--status-danger-text, #ef4444);">Failed to load quarantine logs.</td></tr>`;
+                return;
+            }
+
+            const logs = data.logs || [];
+            const count = logs.length;
+            if (quarantineBadge) {
+                quarantineBadge.textContent = count;
+                quarantineBadge.style.display = count > 0 ? "inline-flex" : "none";
+            }
+            if (valQuarantineTabCount) {
+                valQuarantineTabCount.textContent = count;
+            }
+            if (valDetectedGaps) {
+                valDetectedGaps.textContent = count;
+            }
+
+            valQuarantineTbody.innerHTML = "";
+            if (logs.length === 0) {
+                valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">No pending quarantine records. All extractions meet provenance standards.</td></tr>`;
+                return;
+            }
+
+            logs.forEach(log => {
+                const tr = document.createElement("tr");
+
+                const sourceHtml = log.source_url
+                    ? `<a href="${log.source_url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary, #38bdf8); text-decoration: underline; font-size: 0.8rem;">[Link]</a>`
+                    : `<span style="color: var(--text-muted, #94a3b8);">-</span>`;
+
+                tr.innerHTML = `
+                    <td style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); white-space: nowrap;">${log.created_at || "-"}</td>
+                    <td><strong>${escapeHtml(log.department)}</strong><br><span style="font-size: 0.8rem; color: var(--text-muted, #94a3b8);">${escapeHtml(log.category)}</span></td>
+                    <td><span class="badge-issue-type">${escapeHtml(log.issue_type)}</span></td>
+                    <td style="font-size: 0.82rem; word-break: break-word;">${escapeHtml(log.details)}</td>
+                    <td style="text-align: center;">${sourceHtml}</td>
+                    <td style="text-align: center;">
+                        <div class="quarantine-actions">
+                            <button class="btn-resolve-quarantine" data-id="${log.id}" data-action="Resolved" type="button" title="Mark as resolved">Mark Resolved</button>
+                            <button class="btn-ignore-quarantine" data-id="${log.id}" data-action="Ignored" type="button" title="Ignore this quarantine entry">Ignore</button>
+                        </div>
+                    </td>
+                `;
+                valQuarantineTbody.appendChild(tr);
+            });
+
+            valQuarantineTbody.querySelectorAll(".btn-resolve-quarantine, .btn-ignore-quarantine").forEach(btn => {
+                btn.addEventListener("click", async (e) => {
+                    const id = e.target.getAttribute("data-id");
+                    const action = e.target.getAttribute("data-action");
+                    await resolveQuarantineItem(id, action);
+                });
+            });
+
+        } catch (err) {
+            valQuarantineTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted, #94a3b8);">Error loading quarantine: ${err.message}</td></tr>`;
+        }
+    }
+
+    async function resolveQuarantineItem(logId, status) {
+        try {
+            const res = await fetch(`/api/quarantine/${logId}/resolve`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || `Quarantine entry #${logId} marked as ${status}.`);
+                loadQuarantineLogs();
+                fetchQuarantineSummary();
+            } else {
+                showToast("Action failed: " + (data.message || "Unknown error"));
+            }
+        } catch (err) {
+            showToast("Error updating quarantine log: " + err.message);
+        }
     }
 
     async function loadValidationReport() {
@@ -865,7 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const r = data.report;
             valIntegrityScore.textContent = r.integrity_score || "100%";
             valTotalRecords.textContent = (r.total_records || 0).toLocaleString();
-            valDetectedGaps.textContent = r.quality_metrics.detected_gaps_count || 0;
+            valDetectedGaps.textContent = r.quality_metrics.pending_quarantine_count || r.quality_metrics.detected_gaps_count || 0;
             valFailedPages.textContent = r.quality_metrics.failed_pages_count || 0;
             valLastChecked.textContent = `Audited: ${r.timestamp}`;
 
@@ -900,27 +1011,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 valPortalTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">No live portal reconciliation data available.</td></tr>`;
             }
 
-            // Populate Sequence Gaps Table
-            valGapsTbody.innerHTML = "";
-            if (r.sequence_gaps && r.sequence_gaps.length > 0) {
-                r.sequence_gaps.forEach(g => {
-                    const tr = document.createElement("tr");
-                    tr.innerHTML = `
-                        <td><strong>${g.department}</strong> - ${g.category}</td>
-                        <td><strong>${g.year}</strong></td>
-                        <td>Series: ${g.range}</td>
-                        <td><span style="color: #f59e0b; font-weight: 600;">${g.missing_count} missing</span></td>
-                        <td style="font-size: 0.82rem; color: var(--text-muted, #94a3b8);">${g.missing_samples.join(", ")}</td>
-                    `;
-                    valGapsTbody.appendChild(tr);
-                });
-            } else {
-                valGapsTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">No sequential numbering gaps detected. All recorded series are contiguous.</td></tr>`;
-            }
+            // Also reload quarantine logs
+            loadQuarantineLogs();
 
         } catch (err) {
             btnRunValidation.disabled = false;
             btnRunValidation.textContent = "Re-scan Portals & Audit";
+            showToast("Error running validation: " + err.message);
+        }
+    }
             showToast("Error running validation: " + err.message);
         }
     }
@@ -963,5 +1062,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initial setup
     pollStatus();
     loadRecords();
+    fetchQuarantineSummary();
     setInterval(pollStatus, 2000);
 });

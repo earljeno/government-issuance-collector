@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
 from database.models import IssuanceRecord
-from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
+from database.db import save_checkpoint, get_checkpoint, clear_checkpoint, log_quarantine
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +212,8 @@ class DepEdScraper(BaseScraper):
 
             # Reject generic placeholder titles
             if raw_title.upper() in generic_titles or re.match(r"^DEPED\s+(?:ORDER|ORDERS|MEMORANDUM|MEMORANDA|ADVISORY|ADVISORIES)$", raw_title, re.IGNORECASE):
+                details = f"Generic placeholder title rejected: '{raw_title}'"
+                log_quarantine(self.department_name, category_name, "Missing Metadata", details, post_link or current_url)
                 continue
 
             # Parse issuance metadata from title and post
@@ -219,15 +221,21 @@ class DepEdScraper(BaseScraper):
 
             final_title = (title_str or raw_title).strip()
             if final_title.upper() in generic_titles or re.match(r"^DEPED\s+(?:ORDER|ORDERS|MEMORANDUM|MEMORANDA|ADVISORY|ADVISORIES)$", final_title, re.IGNORECASE):
+                details = f"Generic placeholder title rejected: '{final_title}'"
+                log_quarantine(self.department_name, category_name, "Missing Metadata", details, post_link or current_url)
                 continue
 
             # Academic provenance: title must reflect policy and never be empty
             if not final_title and not iss_num:
+                details = f"Post lacks both title and issuance number. Raw title: '{raw_title}', Date: '{date_str}'"
+                log_quarantine(self.department_name, category_name, "Missing Metadata", details, post_link or current_url)
                 continue
             if not final_title and iss_num:
                 final_title = iss_num
 
             if not final_title:
+                details = f"Post missing valid title. Number: '{iss_num}', Date: '{date_str}'"
+                log_quarantine(self.department_name, category_name, "Missing Metadata", details, post_link or current_url)
                 continue
 
             # Year filter checking
@@ -236,7 +244,7 @@ class DepEdScraper(BaseScraper):
                 if year_s not in date_str and year_s not in raw_title and f"/{year_s}/" not in post_link:
                     continue
 
-            self.check_url_academic_provenance(post_link, self.department_code)
+            self.check_url_academic_provenance(post_link, self.department_code, category=category_name, department_name=self.department_name)
 
             record = IssuanceRecord(
                 department=self.department_name,

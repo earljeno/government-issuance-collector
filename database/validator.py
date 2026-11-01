@@ -7,7 +7,7 @@ import requests
 
 import config
 from config import DEPARTMENTS, REQUEST_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
-from database.db import get_connection, save_issuances_batch, get_failed_pages
+from database.db import get_connection, save_issuances_batch, get_failed_pages, log_quarantine, get_quarantine_logs
 from database.models import IssuanceRecord
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,9 @@ def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]
                 missing = expected - seqs
                 # Only flag as gap if reasonable size (under 100 gaps) to avoid false positives
                 if missing and len(missing) < 100:
+                    samples = sorted(list(missing))[:10]
+                    for missing_num in samples:
+                        log_quarantine(dept, cat, "Sequence Gap", f"Missing issuance number: {missing_num}", "")
                     gap_reports.append({
                         "department": dept,
                         "category": cat,
@@ -201,7 +204,7 @@ def audit_sequence_gaps(department: Optional[str] = None) -> List[Dict[str, Any]
                         "stored_count": len(seqs),
                         "range": f"{min_s} to {max_s}",
                         "missing_count": len(missing),
-                        "missing_samples": sorted(list(missing))[:10]
+                        "missing_samples": samples
                     })
 
     return gap_reports
@@ -327,7 +330,8 @@ def run_full_validation() -> Dict[str, Any]:
         missing_dates = conn.execute("SELECT count(1) FROM issuances WHERE publication_date IS NULL OR publication_date = ''").fetchone()[0]
         
     failed_pages = get_failed_pages()
-    gaps = audit_sequence_gaps()
+    audit_sequence_gaps()
+    quarantine_logs = get_quarantine_logs(status="Pending")
     portal_sync = audit_live_portal_sync()
 
     # Calculate overall integrity score
@@ -338,6 +342,8 @@ def run_full_validation() -> Dict[str, Any]:
         integrity_score -= min(10, missing_titles)
     if missing_urls > 0:
         integrity_score -= min(10, missing_urls)
+    if len(quarantine_logs) > 0:
+        integrity_score -= min(15, len(quarantine_logs))
 
     return {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -348,9 +354,11 @@ def run_full_validation() -> Dict[str, Any]:
             "missing_urls": missing_urls,
             "missing_dates": missing_dates,
             "failed_pages_count": len(failed_pages),
-            "detected_gaps_count": len(gaps)
+            "detected_gaps_count": len(quarantine_logs),
+            "pending_quarantine_count": len(quarantine_logs)
         },
-        "sequence_gaps": gaps,
+        "sequence_gaps": quarantine_logs,
+        "quarantine_logs": quarantine_logs,
         "failed_pages": failed_pages,
         "portal_reconciliation": portal_sync
     }

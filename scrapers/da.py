@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 from scrapers.base import BaseScraper
 from config import DEPARTMENTS
 from database.models import IssuanceRecord
-from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
+from database.db import save_checkpoint, get_checkpoint, clear_checkpoint, log_quarantine
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,8 @@ class DAScraper(BaseScraper):
                 date_text = cells[date_idx].get_text(strip=True) if date_idx < len(cells) else ""
 
                 if not title_text and not code_no:
+                    details = f"Row lacks both title and issuance number. Extracted date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, page_url)
                     continue
 
                 # Fallback: if title is empty, code might have full title
@@ -184,6 +186,8 @@ class DAScraper(BaseScraper):
                     code_no = ""
 
                 if not title_text:
+                    details = f"Row lacks valid title. Code: '{code_no}', Date: '{date_text}'"
+                    log_quarantine(self.department_name, category_name, "Missing Metadata", details, page_url)
                     continue
 
                 # Filter by year if specified
@@ -202,7 +206,7 @@ class DAScraper(BaseScraper):
                         if candidate != page_url:
                             source_link = candidate
 
-                self.check_url_academic_provenance(source_link, self.department_code)
+                self.check_url_academic_provenance(source_link, self.department_code, category=category_name, department_name=self.department_name)
 
                 record = IssuanceRecord(
                     department=self.department_name,

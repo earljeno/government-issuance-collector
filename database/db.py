@@ -71,6 +71,23 @@ def init_db():
             )
         """)
 
+        # Quarantine and manual review ledger table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS quarantine_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                department TEXT,
+                category TEXT,
+                issue_type TEXT,
+                details TEXT,
+                source_url TEXT,
+                status TEXT DEFAULT 'Pending',
+                created_at TEXT,
+                resolved_at TEXT,
+                UNIQUE(department, category, issue_type, details)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_quarantine_status ON quarantine_logs (status)")
+
         # Mark any abandoned 'Running' tasks as 'Interrupted' on server start
         cursor.execute("""
             UPDATE department_status
@@ -406,5 +423,66 @@ def clear_checkpoint(department: str):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM extraction_checkpoints WHERE department = ?", (department,))
+        conn.commit()
+
+
+def log_quarantine(department: str, category: str, issue_type: str, details: str, source_url: str = "") -> Optional[int]:
+    """
+    Records skipped items, missing metadata, or sequence gaps into quarantine_logs.
+    Uses INSERT OR IGNORE based on (department, category, issue_type, details) to prevent duplicates.
+    Returns the inserted log ID, or None if skipped as duplicate.
+    """
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR IGNORE INTO quarantine_logs (
+                department, category, issue_type, details, source_url, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'Pending', ?)
+        """, (department or "", category or "", issue_type or "", details or "", source_url or "", created_at))
+        conn.commit()
+        return cursor.lastrowid if cursor.rowcount > 0 else None
+
+
+def get_quarantine_logs(status: Optional[str] = "Pending") -> List[Dict]:
+    """Retrieves quarantine logs filtered by status (default 'Pending'). If status is None or 'all', returns all logs."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if status and status.lower() != "all":
+            cursor.execute("""
+                SELECT id, department, category, issue_type, details, source_url, status, created_at, resolved_at
+                FROM quarantine_logs
+                WHERE status = ?
+                ORDER BY id DESC
+            """, (status,))
+        else:
+            cursor.execute("""
+                SELECT id, department, category, issue_type, details, source_url, status, created_at, resolved_at
+                FROM quarantine_logs
+                ORDER BY id DESC
+            """)
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def resolve_quarantine_log(log_id: int, status: str = "Resolved") -> bool:
+    """Updates status of a quarantine log to 'Resolved' or 'Ignored' with resolved timestamp."""
+    resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE quarantine_logs
+            SET status = ?, resolved_at = ?
+            WHERE id = ?
+        """, (status, resolved_at, log_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def clear_quarantine_logs():
+    """Clears all quarantine logs (used primarily for test isolation)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM quarantine_logs")
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'quarantine_logs'")
         conn.commit()
 

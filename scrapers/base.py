@@ -15,6 +15,7 @@ from config import (
     REQUEST_TIMEOUT_SECONDS,
 )
 from database.db import (
+    log_quarantine,
     record_failed_page,
     save_issuances_batch,
     update_department_status,
@@ -31,15 +32,29 @@ class BaseScraper(ABC):
     MAX_BACKOFF_SECONDS = 60
 
     @staticmethod
-    def check_url_academic_provenance(url: str, department_code: str = "") -> None:
+    def check_url_academic_provenance(
+        url: str,
+        department_code: str = "",
+        category: str = "",
+        department_name: str = "",
+        department: str = "",
+    ) -> None:
         """Flags non-PDF/HTML or non-government drive URLs to maintain research integrity."""
         if not url:
             return
         lower_url = url.lower()
         if lower_url.endswith(".jpg") or lower_url.endswith(".jpeg") or lower_url.endswith(".png") or "drive.google.com" in lower_url:
+            dept = department or department_name or department_code or "Unknown Agency"
+            cat = category or "General"
+            details = f"Non-PDF/HTML or non-government drive URL detected: {url}"
+            try:
+                log_quarantine(dept, cat, "Non-Academic URL", details, url)
+            except Exception as exc:
+                logger.debug("Failed to record quarantine log: %s", exc)
+
             logger.warning(
                 "[%s] Academic Provenance Warning: Non-PDF/HTML or non-government drive URL detected: %s",
-                department_code,
+                department_code or dept,
                 url,
             )
 
