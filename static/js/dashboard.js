@@ -1020,9 +1020,6 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Error running validation: " + err.message);
         }
     }
-            showToast("Error running validation: " + err.message);
-        }
-    }
 
     if (btnRunValidation) {
         btnRunValidation.addEventListener("click", loadValidationReport);
