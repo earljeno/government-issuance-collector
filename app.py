@@ -8,7 +8,7 @@ import concurrent.futures
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
-from config import DEPARTMENTS, EXPORTS_DIR
+from config import DEPARTMENTS, EXPORTS_DIR, is_prod_env
 from database.db import (
     init_db,
     get_all_department_statuses,
@@ -215,7 +215,7 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
 
 @app.route("/")
 def index():
-    return render_template("dashboard.html", departments=DEPARTMENTS)
+    return render_template("dashboard.html", departments=DEPARTMENTS, is_prod=is_prod_env())
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
@@ -233,7 +233,8 @@ def get_status():
         "total_records": total_db_records,
         "failed_pages_count": len(failed),
         "progress": curr_progress,
-        "checkpoints": checkpoints
+        "checkpoints": checkpoints,
+        "is_prod": is_prod_env()
     })
 
 @app.route("/api/extract", methods=["POST"])
@@ -360,6 +361,11 @@ def cleanup_duplicates():
 
 @app.route("/api/validate", methods=["GET"])
 def api_validate():
+    if is_prod_env():
+        return jsonify({
+            "success": False,
+            "error": "Audit & Reconcile Data is disabled in production."
+        }), 403
     try:
         report = run_full_validation()
         return jsonify({"success": True, "report": report})
@@ -369,6 +375,11 @@ def api_validate():
 
 @app.route("/api/reconcile", methods=["POST"])
 def api_reconcile():
+    if is_prod_env():
+        return jsonify({
+            "success": False,
+            "error": "Audit & Reconcile Data is disabled in production."
+        }), 403
     try:
         data = request.get_json() or {}
         gap_samples = data.get("gap_samples", [])

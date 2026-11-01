@@ -98,6 +98,24 @@ document.addEventListener("DOMContentLoaded", () => {
             globalTotalRecords.textContent = data.total_records.toLocaleString();
             failedPagesBadge.textContent = data.failed_pages_count;
 
+            if (data.is_prod) {
+                if (btnValidateRecords) {
+                    btnValidateRecords.disabled = true;
+                    btnValidateRecords.setAttribute("aria-disabled", "true");
+                    btnValidateRecords.title = "Audit & Reconcile Data is disabled in production";
+                }
+                if (btnRunValidation) {
+                    btnRunValidation.disabled = true;
+                    btnRunValidation.setAttribute("aria-disabled", "true");
+                    btnRunValidation.title = "Audit routines are disabled in production";
+                }
+                if (btnReconcileBackfill) {
+                    btnReconcileBackfill.disabled = true;
+                    btnReconcileBackfill.setAttribute("aria-disabled", "true");
+                    btnReconcileBackfill.title = "Reconciliation is disabled in production";
+                }
+            }
+
             // Update Department Cards
             const codeMap = {
                 "Department of Agriculture": "DA",
@@ -815,6 +833,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Validation & Reconciliation Modal Logic
     if (btnValidateRecords) {
         btnValidateRecords.addEventListener("click", () => {
+            if (btnValidateRecords.disabled) {
+                return;
+            }
             modalValidate.style.display = "flex";
             loadValidationReport();
             loadQuarantineLogs();
@@ -851,6 +872,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function fetchQuarantineSummary() {
+        if (btnValidateRecords && btnValidateRecords.disabled) {
+            if (quarantineBadge) quarantineBadge.style.display = "none";
+            return;
+        }
         try {
             const res = await fetch("/api/quarantine?status=Pending");
             const data = await res.json();
@@ -970,6 +995,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (!data.success) {
                 showToast("Validation check failed: " + (data.error || "Unknown error"));
+                valPortalTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted, #94a3b8);">${escapeHtml(data.error || "Validation check failed.")}</td></tr>`;
                 return;
             }
 

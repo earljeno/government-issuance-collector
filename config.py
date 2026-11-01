@@ -22,6 +22,22 @@ IS_PROD = (
     or os.environ.get("FLASK_ENV") == "production"
 )
 
+
+def is_prod_env() -> bool:
+    """Dynamically determine if the application is running in production."""
+    import sys
+    conf = sys.modules.get("config")
+    prod_flag = getattr(conf, "IS_PROD", False) if conf else IS_PROD
+    return bool(
+        prod_flag
+        or os.environ.get("VERCEL") == "1"
+        or os.environ.get("RENDER") in ("true", "1")
+        or os.environ.get("ENV") == "production"
+        or os.environ.get("ENVIRONMENT") == "production"
+        or os.environ.get("FLASK_ENV") == "production"
+    )
+
+
 # 1. File storage routing
 if IS_VERCEL:
     DATA_DIR = Path(tempfile.gettempdir()) / "data"

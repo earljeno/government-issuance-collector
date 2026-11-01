@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 import config
 
 config.DATABASE_URI = os.environ.get(
@@ -37,6 +38,14 @@ class TestAppEndpoints(unittest.TestCase):
         self.assertIn(b"Department of Environment and Natural Resources", resp.data)
         self.assertIn(b"Department of Education", resp.data)
 
+    @patch("app.is_prod_env", return_value=True)
+    def test_dashboard_get_prod_disabled_audit(self, mock_is_prod):
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'id="btn-validate-records"', resp.data)
+        self.assertIn(b'disabled', resp.data)
+        self.assertIn(b'Audit &amp; Reconcile Data is disabled in production', resp.data)
+
     def test_api_status(self):
         resp = self.client.get("/api/status")
         self.assertEqual(resp.status_code, 200)
@@ -44,6 +53,14 @@ class TestAppEndpoints(unittest.TestCase):
         self.assertIn("departments", data)
         self.assertIn("total_records", data)
         self.assertIn("progress", data)
+        self.assertIn("is_prod", data)
+
+    @patch("app.is_prod_env", return_value=True)
+    def test_api_status_prod(self, mock_is_prod):
+        resp = self.client.get("/api/status")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data.get("is_prod"))
 
     def test_api_records(self):
         resp = self.client.get("/api/records?page=1&page_size=10")

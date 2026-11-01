@@ -77,6 +77,22 @@ class TestValidator(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["recovered_count"], 5)
 
+    @patch("app.is_prod_env", return_value=True)
+    def test_api_validate_disabled_on_prod(self, mock_is_prod):
+        resp = self.client.get("/api/validate")
+        self.assertEqual(resp.status_code, 403)
+        data = resp.get_json()
+        self.assertFalse(data["success"])
+        self.assertIn("disabled in production", data["error"])
+
+    @patch("app.is_prod_env", return_value=True)
+    def test_api_reconcile_disabled_on_prod(self, mock_is_prod):
+        resp = self.client.post("/api/reconcile", json={"gap_samples": ["2026-0003"]})
+        self.assertEqual(resp.status_code, 403)
+        data = resp.get_json()
+        self.assertFalse(data["success"])
+        self.assertIn("disabled in production", data["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

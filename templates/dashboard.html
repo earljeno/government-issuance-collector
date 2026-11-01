@@ -79,7 +79,8 @@
                     <button id="btn-retry-failed" class="btn btn-outline" type="button" title="Retry failed pages">
                         <span>Retry Failed Pages (<span id="failed-pages-badge">0</span>)</span>
                     </button>
-                    <button id="btn-validate-records" class="btn btn-outline" type="button" title="Audit database records against live portal and detect missing data">
+                    <button id="btn-validate-records" class="btn btn-outline" type="button"
+                        {% if is_prod %}disabled title="Audit &amp; Reconcile Data is disabled in production" aria-disabled="true"{% else %}title="Audit database records against live portal and detect missing data"{% endif %}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
                         <span>Audit & Reconcile Data</span>
                         <span id="quarantine-badge" class="badge-quarantine-count" style="display: none;">0</span>
@@ -583,13 +584,19 @@
                 </div>
 
                 <!-- Action Controls Row -->
+                {% if is_prod %}
+                <div class="prod-notice-banner" style="margin-bottom: 16px; padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; color: #f87171; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>Audit and live portal reconciliation routines are disabled in production to protect portal stability.</span>
+                </div>
+                {% endif %}
                 <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center; justify-content: space-between;">
                     <div style="display: flex; gap: 10px;">
-                        <button id="btn-run-validation" class="btn btn-primary btn-sm" type="button">
+                        <button id="btn-run-validation" class="btn btn-primary btn-sm" type="button" {% if is_prod %}disabled title="Audit routines are disabled in production" aria-disabled="true"{% endif %}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                             <span>Re-scan Portals & Audit</span>
                         </button>
-                        <button id="btn-reconcile-backfill" class="btn btn-success btn-sm" type="button">
+                        <button id="btn-reconcile-backfill" class="btn btn-success btn-sm" type="button" {% if is_prod %}disabled title="Reconciliation is disabled in production" aria-disabled="true"{% endif %}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                             <span>Reconcile & Backfill Missing</span>
                         </button>
