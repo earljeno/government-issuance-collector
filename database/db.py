@@ -17,6 +17,7 @@ from sqlalchemy import (
     func,
     or_
 )
+from sqlalchemy.pool import NullPool
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -27,12 +28,14 @@ from database.models import IssuanceRecord
 def get_engine_kwargs(uri: str) -> dict:
     """
     Configures SQLAlchemy connection pooling dynamically:
-    - Cloud production / remote poolers (Render, Supabase, Vercel): limits pool_size=2 and max_overflow=3
-      to keep total connections well below the Supabase Session mode limit (15 concurrent clients).
+    - Supabase Transaction pooler (port 6543 / pooler.supabase.com): uses NullPool so connections
+      are managed externally by Supavisor and never hoard pooled connections.
+    - Cloud production (Render, Vercel): limits pool_size=2 and max_overflow=3.
     - Local / Dev: unconstrained pool (pool_size=10, max_overflow=20) for fast parallel scraping without limits.
     """
-    is_remote_or_prod = getattr(config, "IS_PROD", False) or any(
-        host in (uri or "") for host in ("supabase.", "pooler.supabase", "render.com", "neon.tech", "aws")
+    is_supabase_pooler = "pooler.supabase.com" in (uri or "") or ":6543" in (uri or "")
+    is_remote_or_prod = getattr(config, "IS_PROD", False) or is_supabase_pooler or any(
+        host in (uri or "") for host in ("supabase.", "render.com", "neon.tech", "aws")
     )
 
     kwargs = {
@@ -40,7 +43,10 @@ def get_engine_kwargs(uri: str) -> dict:
         "connect_args": {"prepare_threshold": None}
     }
 
-    if is_remote_or_prod:
+    if is_supabase_pooler:
+        # Use NullPool with Supabase Transaction pooler so connections are released back immediately
+        kwargs["poolclass"] = NullPool
+    elif is_remote_or_prod:
         kwargs["pool_size"] = int(os.environ.get("DB_POOL_SIZE", 2))
         kwargs["max_overflow"] = int(os.environ.get("DB_MAX_OVERFLOW", 3))
         kwargs["pool_recycle"] = 300

@@ -40,6 +40,11 @@ raw_url = (
 )
 DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
 
+# Automatically route Supabase pooler from Session mode (:5432 with 15-client limit)
+# to Transaction mode (:6543) to avoid EMAXCONNSESSION
+if "pooler.supabase.com:5432" in DATABASE_URI:
+    DATABASE_URI = DATABASE_URI.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
+
 # Application Settings
 APP_HOST = "127.0.0.1"
 APP_PORT = 5000
