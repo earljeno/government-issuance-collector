@@ -1,29 +1,17 @@
 import os
-import tempfile
 import requests
-from pathlib import Path
-
-# Detect if running on Vercel
-IS_VERCEL = os.environ.get("VERCEL") == "1"
-
-# Route working directory based on environment
-if IS_VERCEL:
-    DATA_DIR = Path(tempfile.gettempdir()) / "data"
-else:
-    DATA_DIR = Path(__file__).parent / "data"
-
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+from config import DATA_DIR, EXPORTS_DIR, IS_VERCEL
 
 
 def save_document(file_bytes, filename):
     """Saves to local storage, or uploads to Vercel Blob if deployed."""
-    file_path = DATA_DIR / filename
+    file_path = EXPORTS_DIR / filename
 
-    # 1. Write the file (to local disk OR Vercel's /tmp)
+    # 1. Always write to the working directory first (Local disk or Vercel /tmp)
     with open(file_path, "wb") as f:
         f.write(file_bytes)
 
-    # 2. If local, we are done. If Vercel, push to Blob for persistence.
+    # 2. If on Vercel, push to Blob for permanent storage
     if IS_VERCEL:
         token = os.environ.get("BLOB_READ_WRITE_TOKEN")
         url = f"https://blob.vercel-storage.com/{filename}"
@@ -31,9 +19,11 @@ def save_document(file_bytes, filename):
         with open(file_path, "rb") as f:
             response = requests.put(url, data=f, headers={"authorization": f"Bearer {token}"})
 
-        # Delete temporary file from Vercel's /tmp container
+        # Clean up the temporary Vercel file to save memory
         file_path.unlink()
 
-        return response.json().get("url")  # Returns permanent Blob URL
+        # Return the permanent cloud URL
+        return response.json().get("url")
 
-    return str(file_path)  # Returns local system path
+    # If local, just return the local file path
+    return str(file_path)

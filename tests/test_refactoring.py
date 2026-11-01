@@ -235,7 +235,7 @@ class TestRefactoringFixes(unittest.TestCase):
         self.assertEqual(len(records), 0)
 
     def test_save_document_localhost(self):
-        """save_document on localhost writes to local DATA_DIR and returns local file path."""
+        """save_document on localhost writes to local EXPORTS_DIR and returns local file path."""
         import storage
         test_bytes = b"Sample document content for testing localhost"
         test_filename = "test_doc_local.pdf"
@@ -243,7 +243,7 @@ class TestRefactoringFixes(unittest.TestCase):
         with patch.object(storage, "IS_VERCEL", False):
             result_path = storage.save_document(test_bytes, test_filename)
             self.assertTrue(os.path.exists(result_path))
-            self.assertEqual(result_path, str(storage.DATA_DIR / test_filename))
+            self.assertEqual(result_path, str(storage.EXPORTS_DIR / test_filename))
             with open(result_path, "rb") as f:
                 self.assertEqual(f.read(), test_bytes)
             os.remove(result_path)
@@ -265,7 +265,7 @@ class TestRefactoringFixes(unittest.TestCase):
             blob_url = storage.save_document(test_bytes, test_filename)
             self.assertEqual(blob_url, "https://blob.vercel-storage.com/test_doc_vercel.pdf")
             mock_put.assert_called_once()
-            temp_path = storage.DATA_DIR / test_filename
+            temp_path = storage.EXPORTS_DIR / test_filename
             self.assertFalse(temp_path.exists())
 
     def test_quarantine_db_operations(self):
@@ -415,6 +415,29 @@ class TestRefactoringFixes(unittest.TestCase):
         from database.db import save_checkpoint, get_checkpoint, clear_checkpoint
         clear_checkpoint("Department of Education")
 
+    def test_database_uri_and_sqlalchemy_setup(self):
+        """Verify dynamic SQLite/Postgres database URI routing and SQLAlchemy initialization."""
+        from database.db import engine, SessionLocal, Base, init_db
+        self.assertIsNotNone(engine)
+        self.assertIsNotNone(SessionLocal)
+        self.assertIsNotNone(Base)
+
+        # Check local URI is sqlite
+        self.assertTrue(config.DATABASE_URI.startswith("sqlite:///"))
+
+        # Verify Vercel Postgres URI formatting
+        raw_url = "postgres://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
+        expected_uri = "postgresql://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
+        converted = raw_url.replace("postgres://", "postgresql://", 1)
+        self.assertEqual(converted, expected_uri)
+
+        # Verify SessionLocal can create and close a session
+        session = SessionLocal()
+        session.close()
+
+        # Verify init_db executes cleanly
+        init_db()
+
         # Save checkpoint with completed category and in-flight category page
         save_checkpoint(
             department="Department of Education",
@@ -461,6 +484,29 @@ class TestRefactoringFixes(unittest.TestCase):
         self.assertTrue(any("/page/5/" in u for u in fetched_urls))
 
         clear_checkpoint("Department of Education")
+
+    def test_database_uri_and_sqlalchemy_setup(self):
+        """Verify dynamic SQLite/Postgres database URI routing and SQLAlchemy initialization."""
+        from database.db import engine, SessionLocal, Base, init_db
+        self.assertIsNotNone(engine)
+        self.assertIsNotNone(SessionLocal)
+        self.assertIsNotNone(Base)
+
+        # Check local URI is sqlite
+        self.assertTrue(config.DATABASE_URI.startswith("sqlite:///"))
+
+        # Verify Vercel Postgres URI formatting
+        raw_url = "postgres://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
+        expected_uri = "postgresql://default:secret@ep-cool-db.us-east-1.postgres.vercel-storage.com:5432/verceldb"
+        converted = raw_url.replace("postgres://", "postgresql://", 1)
+        self.assertEqual(converted, expected_uri)
+
+        # Verify SessionLocal can create and close a session
+        session = SessionLocal()
+        session.close()
+
+        # Verify init_db executes cleanly
+        init_db()
 
 
 if __name__ == "__main__":

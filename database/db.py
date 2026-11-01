@@ -2,98 +2,115 @@ import sqlite3
 import json
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+
+from sqlalchemy import create_engine, Column, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import sessionmaker, declarative_base
+
 import config
+from config import DATABASE_URI
 from database.models import IssuanceRecord
 
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(config.DATABASE_PATH, timeout=30.0)
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.row_factory = sqlite3.Row
-    return conn
+# Connect to either Local SQLite or Vercel Postgres based on config
+connect_args = {"check_same_thread": False} if (DATABASE_URI and DATABASE_URI.startswith("sqlite")) else {}
+engine = create_engine(DATABASE_URI, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+class IssuanceModel(Base):
+    __tablename__ = "issuances"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    department = Column(String(255), nullable=False)
+    category = Column(String(255), nullable=False)
+    issuance_number = Column(String(255), nullable=True)
+    title = Column(Text, nullable=False)
+    publication_date = Column(String(50), nullable=True)
+    source_url = Column(Text, nullable=True)
+    extraction_timestamp = Column(String(50), nullable=False)
+    duplicate_hash = Column(String(64), unique=True, nullable=True)
+
+
+class DepartmentStatusModel(Base):
+    __tablename__ = "department_status"
+    department = Column(String(255), primary_key=True)
+    status = Column(String(50), default="Idle")
+    total_records = Column(Integer, default=0)
+    last_extraction = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+    current_category = Column(String(255), nullable=True)
+    current_page = Column(Integer, default=0)
+    total_pages = Column(String(50), default="Unknown")
+
+
+class FailedPageModel(Base):
+    __tablename__ = "failed_pages"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    department = Column(String(255), nullable=False)
+    category = Column(String(255), nullable=False)
+    url = Column(Text, nullable=False)
+    error_message = Column(Text, nullable=True)
+    timestamp = Column(String(50), nullable=False)
+    retry_count = Column(Integer, default=0)
+
+
+class ExtractionCheckpointModel(Base):
+    __tablename__ = "extraction_checkpoints"
+    department = Column(String(255), primary_key=True)
+    category = Column(String(255), nullable=True)
+    page = Column(Integer, default=1)
+    url = Column(Text, nullable=True)
+    completed_categories = Column(Text, nullable=True)
+    updated_at = Column(String(50), nullable=True)
+    category_pages = Column(Text, default="{}")
+
+
+class QuarantineLogModel(Base):
+    __tablename__ = "quarantine_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    department = Column(String(255), nullable=True)
+    category = Column(String(255), nullable=True)
+    issue_type = Column(String(100), nullable=True)
+    details = Column(Text, nullable=True)
+    source_url = Column(Text, nullable=True)
+    status = Column(String(50), default="Pending", index=True)
+    created_at = Column(String(50), nullable=True)
+    resolved_at = Column(String(50), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("department", "category", "issue_type", "details", name="uq_quarantine_log"),
+    )
+
+
+def get_current_engine():
+    uri = getattr(config, "DATABASE_URI", DATABASE_URI)
+    db_path = getattr(config, "DATABASE_PATH", None)
+    if uri and uri.startswith("sqlite") and db_path:
+        expected_uri = f"sqlite:///{db_path}"
+        if expected_uri != str(engine.url):
+            return create_engine(expected_uri, connect_args={"check_same_thread": False})
+    return engine
+
+
+def get_connection():
+    uri = getattr(config, "DATABASE_URI", DATABASE_URI)
+    if not uri or uri.startswith("sqlite"):
+        db_path = getattr(config, "DATABASE_PATH", config.DATA_DIR / "database.db")
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.row_factory = sqlite3.Row
+        return conn
+    else:
+        curr_engine = get_current_engine()
+        return curr_engine.raw_connection()
+
 
 def init_db():
-    """Initializes SQLite database tables and indexes."""
+    """Initializes database schema and default rows across SQLite or PostgreSQL."""
+    curr_engine = get_current_engine()
+    Base.metadata.create_all(bind=curr_engine)
+
     with get_connection() as conn:
         cursor = conn.cursor()
-        
-        # Issuances table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS issuances (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                department TEXT NOT NULL,
-                category TEXT NOT NULL,
-                issuance_number TEXT,
-                title TEXT NOT NULL,
-                publication_date TEXT,
-                source_url TEXT,
-                extraction_timestamp TEXT NOT NULL,
-                duplicate_hash TEXT UNIQUE
-            )
-        """)
-        
-        # Department progress and status table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS department_status (
-                department TEXT PRIMARY KEY,
-                status TEXT DEFAULT 'Idle',
-                total_records INTEGER DEFAULT 0,
-                last_extraction TEXT,
-                error_message TEXT,
-                current_category TEXT,
-                current_page INTEGER DEFAULT 0,
-                total_pages TEXT DEFAULT 'Unknown'
-            )
-        """)
-        
-        # Failed pages table for retry tracking
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS failed_pages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                department TEXT NOT NULL,
-                category TEXT NOT NULL,
-                url TEXT NOT NULL,
-                error_message TEXT,
-                timestamp TEXT NOT NULL,
-                retry_count INTEGER DEFAULT 0
-            )
-        """)
-
-        # Extraction checkpoints for resuming interrupted runs
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS extraction_checkpoints (
-                department TEXT PRIMARY KEY,
-                category TEXT,
-                page INTEGER DEFAULT 1,
-                url TEXT,
-                completed_categories TEXT,
-                updated_at TEXT,
-                category_pages TEXT DEFAULT '{}'
-            )
-        """)
-
-        # Ensure category_pages column exists for upgrades
-        try:
-            cursor.execute("ALTER TABLE extraction_checkpoints ADD COLUMN category_pages TEXT DEFAULT '{}'")
-        except sqlite3.OperationalError:
-            pass
-
-        # Quarantine and manual review ledger table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS quarantine_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                department TEXT,
-                category TEXT,
-                issue_type TEXT,
-                details TEXT,
-                source_url TEXT,
-                status TEXT DEFAULT 'Pending',
-                created_at TEXT,
-                resolved_at TEXT,
-                UNIQUE(department, category, issue_type, details)
-            )
-        """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_quarantine_status ON quarantine_logs (status)")
 
         # Mark any abandoned 'Running' tasks as 'Interrupted' on server start
         cursor.execute("""
@@ -102,7 +119,7 @@ def init_db():
                 error_message = 'Interrupted by server restart or shutdown. Click Resume to continue.'
             WHERE status = 'Running'
         """)
-        
+
         # Initialize default department statuses if not present
         default_depts = [
             "Department of Agriculture",
@@ -115,7 +132,7 @@ def init_db():
                 INSERT OR IGNORE INTO department_status (department, status, total_records)
                 VALUES (?, 'Idle', 0)
             """, (dept,))
-            
+
         conn.commit()
 
 def save_issuance(record: IssuanceRecord) -> bool:

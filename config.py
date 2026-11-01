@@ -1,29 +1,50 @@
 import os
 import tempfile
 from pathlib import Path
-from storage import IS_VERCEL, DATA_DIR, save_document
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent
 
-# Migrate legacy database/issuances.db to data/issuances.db if present
-legacy_db = BASE_DIR / "database" / "issuances.db"
-default_db = DATA_DIR / "issuances.db"
-if not default_db.exists() and legacy_db.exists():
-    try:
-        import shutil
-        shutil.copy2(legacy_db, default_db)
-    except Exception:
-        pass
+# Detect if we are running on Vercel
+IS_VERCEL = os.environ.get("VERCEL") == "1"
 
-DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(default_db)))
+# 1. FILE STORAGE ROUTING
+if IS_VERCEL:
+    # Vercel requires writing to /tmp
+    DATA_DIR = Path(tempfile.gettempdir()) / "data"
+else:
+    # Local development writes to the project folder
+    DATA_DIR = Path(__file__).parent / "data"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+EXPORTS_DIR = DATA_DIR / "exports"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# 2. DATABASE ROUTING
+if IS_VERCEL:
+    # Use Vercel Postgres in production (must use postgresql:// for SQLAlchemy)
+    raw_url = os.environ.get("POSTGRES_URL", "")
+    DATABASE_URI = raw_url.replace("postgres://", "postgresql://", 1)
+    DATABASE_PATH = DATA_DIR / "database.db"
+else:
+    # Use SQLite locally
+    DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_DIR / "database.db")))
+    DATABASE_URI = f"sqlite:///{DATABASE_PATH}"
+
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-if IS_VERCEL:
-    EXPORTS_DIR = Path(tempfile.gettempdir()) / "exports"
-else:
-    EXPORTS_DIR = Path(os.environ.get("EXPORTS_DIR", str(BASE_DIR / "exports")))
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+# Migrate legacy database files if database.db does not exist yet
+legacy_db = BASE_DIR / "database" / "issuances.db"
+legacy_data_db = DATA_DIR / "issuances.db"
+if not DATABASE_PATH.exists():
+    for old_db in [legacy_data_db, legacy_db]:
+        if old_db.exists():
+            try:
+                import shutil
+                shutil.copy2(old_db, DATABASE_PATH)
+                break
+            except Exception:
+                pass
 
 # Application Settings
 APP_HOST = "127.0.0.1"
