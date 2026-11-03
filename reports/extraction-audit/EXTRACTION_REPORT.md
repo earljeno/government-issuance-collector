@@ -26,16 +26,16 @@ All findings herein were obtained through direct read-only inspection of the act
 | **Software Version** | 1.0.0 (Semantic Versioning `v1.0.0`) | Verified | `version.py` L6; `pyproject.toml` L6; `config.py` L68; `/api/version` |
 | **Active Git Branch** | `main` | Verified | `git status` (`On branch main`) |
 | **Git Release Tag** | `v1.0.0` | Verified | `git tag -l` |
-| **Latest Git Commit Hash** | `1f3a409e76ed903232c70ed4918055dd0c629255` | Verified | `git rev-parse HEAD` |
-| **Commit Timestamp (Revision Date)** | `2026-11-03 10:04:03 +08:00` | Verified | `git log -1` (`Tue Nov 3 10:04:03 2026 +0800`) |
-| **Commit Subject** | `Chunk bulk issuance inserts to prevent exceeding postgres parameter limit` | Verified | `git log -1 --format="%s"` |
+| **Latest Git Commit Hash** | `d91fac697d5156f5ab17c891336096d08125c2c2` | Verified | `git rev-parse HEAD` |
+| **Commit Timestamp (Revision Date)** | `2026-11-03 14:21:06 +08:00` | Verified | `git log -1` (`Tue Nov 3 10:04:03 2026 +0800`) |
+| **Commit Subject** | `feat(core): establish semantic versioning v1.0.0, build date metadata, and extraction audit reports` | Verified | `git log -1 --format="%s"` |
 | **Formal Build Date** | `2026-11-03` | Verified | `version.py` L7; `config.py` L69; `/api/version`; UI footer |
 | **Python Runtime Version** | Python 3.13.3 (64-bit AMD64, MSC v.1943) | Verified | `sys.version` in virtual environment (`venv`) |
 | **Core Frameworks & Libraries** | Flask 3.1.3, SQLAlchemy 2.1.6, Psycopg 3.3.6, Requests 2.34.2, Playwright 1.64.1, Pandas 3.1.0, python-docx 1.2.0, openpyxl 3.1.5, BeautifulSoup4 4.15.0 | Verified | `importlib.metadata.version` in `venv` |
 
 ### Key Distinction of Dates
 - **Software Version:** Formally stamped as `v1.0.0` in `version.py`, `config.py`, `pyproject.toml`, and Git tag `v1.0.0`.
-- **Source Revision Date:** `November 3, 2026 at 10:04:03 AM PHT (UTC+08:00)`.
+- **Source Revision Date:** `November 3, 2026 at 02:21:06 PM PHT (UTC+08:00)`.
 - **Build Date:** Formally established as `November 3, 2026`, exposed via `/api/version` and the dashboard interface.
 - **Extraction Run Dates:** Conducted on `November 3, 2026` between `09:54:00` and `11:33:40 PHT (UTC+08:00)` (detailed below).
 
