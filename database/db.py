@@ -209,9 +209,11 @@ def save_issuance(record: IssuanceRecord) -> bool:
         return inserted_id is not None
 
 
-def save_issuances_batch(records: List[IssuanceRecord]) -> Tuple[int, int]:
+def save_issuances_batch(records: List[IssuanceRecord], chunk_size: int = 1000) -> Tuple[int, int]:
     """
     Batch inserts records via PostgreSQL bulk insert with conflict handling.
+    Chunks the insert statements into manageable sizes to stay safely within
+    PostgreSQL's wire-protocol limit of 65,535 parameters.
     Returns (inserted_count, duplicates_count).
     """
     if not records:
@@ -233,20 +235,23 @@ def save_issuances_batch(records: List[IssuanceRecord]) -> Tuple[int, int]:
             "duplicate_hash": dup_hash
         })
 
-    stmt = (
-        pg_insert(IssuanceModel)
-        .values(values_list)
-        .on_conflict_do_nothing(index_elements=["duplicate_hash"])
-        .returning(IssuanceModel.id)
-    )
-
+    total_inserted = 0
     with get_db_session() as session:
-        res = session.execute(stmt)
-        inserted_ids = res.scalars().all()
-        session.commit()
-        inserted = len(inserted_ids)
-        duplicates = len(records) - inserted
-        return inserted, duplicates
+        for i in range(0, len(values_list), chunk_size):
+            chunk = values_list[i : i + chunk_size]
+            stmt = (
+                pg_insert(IssuanceModel)
+                .values(chunk)
+                .on_conflict_do_nothing(index_elements=["duplicate_hash"])
+                .returning(IssuanceModel.id)
+            )
+            res = session.execute(stmt)
+            inserted_ids = res.scalars().all()
+            total_inserted += len(inserted_ids)
+            session.commit()
+
+    total_duplicates = len(records) - total_inserted
+    return total_inserted, total_duplicates
 
 
 def get_issuances(
