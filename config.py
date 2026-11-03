@@ -62,6 +62,15 @@ if "pooler.supabase.com:5432" in DATABASE_URI:
     DATABASE_URI = DATABASE_URI.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
 
 # Application Settings
+try:
+    from version import __version__, __build_date__, APP_NAME
+    APP_VERSION = __version__
+    BUILD_DATE = __build_date__
+except ImportError:
+    APP_NAME = "Philippine Government Issuance Title Collector"
+    APP_VERSION = "1.0.0"
+    BUILD_DATE = "2026-11-03"
+
 APP_HOST = "127.0.0.1"
 APP_PORT = 5000
 DEBUG = False

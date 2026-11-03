@@ -56,3 +56,6 @@ playwright/.cache/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Scratch and temporary scripts
+scratch/

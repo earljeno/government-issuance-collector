@@ -8,7 +8,8 @@ import concurrent.futures
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
-from config import DEPARTMENTS, EXPORTS_DIR, is_prod_env
+from version import __version__, __build_date__, APP_NAME
+from config import DEPARTMENTS, EXPORTS_DIR, is_prod_env, APP_VERSION, BUILD_DATE
 from database.db import (
     init_db,
     get_all_department_statuses,
@@ -217,7 +218,24 @@ def run_extraction_worker(selected_depts: list, cat_filters: dict, year_filter: 
 
 @app.route("/")
 def index():
-    return render_template("dashboard.html", departments=DEPARTMENTS, is_prod=is_prod_env())
+    return render_template(
+        "dashboard.html",
+        departments=DEPARTMENTS,
+        is_prod=is_prod_env(),
+        app_name=APP_NAME,
+        app_version=__version__,
+        build_date=__build_date__,
+    )
+
+@app.route("/api/version", methods=["GET"])
+def get_version():
+    return jsonify({
+        "app_name": APP_NAME,
+        "version": __version__,
+        "build_date": __build_date__,
+        "python_version": sys.version.split()[0],
+        "status": "operational"
+    })
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
@@ -231,6 +249,9 @@ def get_status():
             curr_progress["active_departments"] = list(curr_progress["active_departments"])
 
     return jsonify({
+        "app_name": APP_NAME,
+        "app_version": __version__,
+        "build_date": __build_date__,
         "departments": dept_statuses,
         "total_records": total_db_records,
         "failed_pages_count": len(failed),
@@ -613,7 +634,7 @@ if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5000))
     print(f"\n==================================================================")
-    print(f"Philippine Government Issuance Title Collector starting on:")
+    print(f"{APP_NAME} v{__version__} (Build {__build_date__}) starting on:")
     print(f"http://127.0.0.1:{port}")
     print(f"==================================================================\n")
     app.run(host="0.0.0.0", port=port, debug=False)

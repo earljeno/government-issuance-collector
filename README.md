@@ -1,5 +1,7 @@
 # Philippine Government Issuance Title Collector
 
+**Version 1.0.0** &bull; **Build Date: 2026-11-03**
+
 An administrative web application built with Python and Flask for automatically collecting and compiling the **TITLES** of laws, policies, and administrative issuances from four key Philippine government departments:
 
 1. **Department of Agriculture (DA)** – `https://www.da.gov.ph/`
@@ -29,6 +31,8 @@ The application compiles collected government issuance titles into an organized 
 
 ```text
 government-issuance-collector/
+├── version.py                 # Single source of truth for version and build metadata
+├── pyproject.toml             # Standard PEP 621 package metadata
 ├── app.py                     # Flask application & background task manager
 ├── config.py                  # Department URLs, scraper settings, and file paths
 ├── requirements.txt           # Python dependencies

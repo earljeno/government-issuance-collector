@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "government-issuance-collector"
+version = "1.0.0"
+description = "Administrative web application for collecting and compiling titles of Philippine government issuances"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [
+    { name = "Government Issuance Collector Engineering Team" }
+]
+keywords = [
+    "scraping",
+    "philippines",
+    "government-issuances",
+    "flask",
+    "metadata-collector"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: Flask",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search"
+]
+dependencies = [
+    "Flask>=3.0.0",
+    "SQLAlchemy>=2.0.0",
+    "psycopg[binary]>=3.1.0",
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "pandas>=2.1.0",
+    "openpyxl>=3.1.0",
+    "python-docx>=1.0.0",
+    "playwright>=1.40.0"
+]

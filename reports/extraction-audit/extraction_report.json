@@ -1,0 +1,364 @@
+{
+  "report_metadata": {
+    "report_title": "Extraction Methodology and Run History Technical Report",
+    "generated_at": "2026-11-03T12:09:00+08:00",
+    "timezone": "Asia/Manila (UTC+08:00)",
+    "audit_mode": "read_only"
+  },
+  "tool_information": {
+    "application_name": {
+      "value": "Philippine Government Issuance Title Collector",
+      "verification_status": "Verified",
+      "source": "README.md L1, app.py L616"
+    },
+    "version_number": {
+      "value": "1.0.0",
+      "verification_status": "Verified",
+      "source": "version.py L6, config.py L68, pyproject.toml L6, /api/version",
+      "notes": "Formal semantic version defined as 1.0.0 (v1.0.0) in version.py and PEP 621 pyproject.toml."
+    },
+    "build_date": {
+      "value": "2026-11-03",
+      "verification_status": "Verified",
+      "source": "version.py L7, config.py L69, /api/version, dashboard footer",
+      "notes": "Formal build identifier stamped as 2026-11-03 in version.py and exposed live via /api/version and dashboard interface."
+    },
+    "git": {
+      "branch": {
+        "value": "main",
+        "verification_status": "Verified",
+        "source": "git status"
+      },
+      "commit_hash": {
+        "value": "1f3a409e76ed903232c70ed4918055dd0c629255",
+        "verification_status": "Verified",
+        "source": "git rev-parse HEAD"
+      },
+      "commit_timestamp": {
+        "value": "2026-11-03T10:04:03+08:00",
+        "verification_status": "Verified",
+        "source": "git log -1"
+      },
+      "commit_message": {
+        "value": "Chunk bulk issuance inserts to prevent exceeding postgres parameter limit",
+        "verification_status": "Verified",
+        "source": "git log -1"
+      },
+      "tag": {
+        "value": "v1.0.0",
+        "verification_status": "Verified",
+        "source": "git tag -l"
+      }
+    },
+    "runtime_environment": {
+      "python_version": {
+        "value": "3.13.3",
+        "verification_status": "Verified",
+        "source": "sys.version in virtual environment (venv)"
+      },
+      "packages": {
+        "flask": "3.1.3",
+        "sqlalchemy": "2.1.6",
+        "psycopg": "3.3.6",
+        "requests": "2.34.2",
+        "playwright": "1.64.1",
+        "pandas": "3.1.0",
+        "python-docx": "1.2.0",
+        "openpyxl": "3.1.5",
+        "beautifulsoup4": "4.15.0",
+        "urllib3": "2.8.0"
+      },
+      "verification_status": "Verified"
+    }
+  },
+  "agency_runs": {
+    "DA": {
+      "agency_name": "Department of Agriculture",
+      "agency_code": "DA",
+      "total_records_in_db": 10409,
+      "run_completed": true,
+      "run_status": "Completed",
+      "timestamps": {
+        "timezone": "Asia/Manila (UTC+08:00)",
+        "extraction_start": {
+          "value": "2026-11-03T09:54:00+08:00",
+          "verification_status": "Verified",
+          "source": "MIN(extraction_timestamp) in issuances table for Department of Agriculture"
+        },
+        "final_record_extracted": {
+          "value": "2026-11-03T09:54:42+08:00",
+          "verification_status": "Verified",
+          "source": "MAX(extraction_timestamp) in issuances table for Department of Agriculture"
+        },
+        "last_extraction_event": {
+          "value": "2026-11-03T09:54:44+08:00",
+          "verification_status": "Verified",
+          "source": "department_status.last_extraction"
+        }
+      },
+      "settings": {
+        "selected_categories": {
+          "value": [
+            "Administrative Orders",
+            "Administrative Circulars",
+            "Department Orders",
+            "Department Circulars",
+            "Memorandum Orders",
+            "Memorandum Circulars",
+            "Joint Administrative Orders",
+            "Joint Department Circulars",
+            "Joint Memorandum Circulars",
+            "Joint Memorandum Orders",
+            "Joint Special Orders",
+            "Special Orders",
+            "General Memorandum Orders",
+            "Office Orders",
+            "Inter-Agency Circulars",
+            "Republic Acts and Proclamations"
+          ],
+          "count": 16,
+          "verification_status": "Verified",
+          "notes": "15 categories successfully extracted (10,409 records, representing 100% of the active categories published under the DA's official Laws and Issuances navigation menu). 1 configured category ('Republic Acts and Proclamations') failed network fetch because it has been unlinked/decommissioned from the active DA navigation tree."
+        },
+        "year_filter": {
+          "value": null,
+          "effective_setting": "All Available Years (Unfiltered)",
+          "verification_status": "Verified",
+          "notes": "No year filter applied. Database records span 2016 through 2026 across 8 distinct years."
+        },
+        "page_limit": {
+          "value": null,
+          "effective_setting": "All Pages (Complete)",
+          "verification_status": "Verified",
+          "notes": "DAScraper scrapes full single-page TablePress tables containing all yearly sub-tables; page limit parameter is not used."
+        },
+        "historical_settings_persisted": false
+      },
+      "errors_and_retries": {
+        "errors_encountered": true,
+        "error_count": 1,
+        "failed_pages_remaining": 1,
+        "retry_count": 0,
+        "verification_status": "Verified",
+        "error_records": [
+          {
+            "category": "Republic Acts and Proclamations",
+            "url": "https://www.da.gov.ph/laws-and-issuances/republic-acts/",
+            "error_message": "Failed to fetch https://www.da.gov.ph/laws-and-issuances/republic-acts/ (HTTP No response)",
+            "timestamp": "2026-11-03T09:54:44+08:00",
+            "retry_count": 0
+          }
+        ],
+        "notes": "BaseScraper executed up to 3 in-process HTTP retries with exponential backoff before logging failure to failed_pages. The failed category ('Republic Acts and Proclamations') is confirmed unlinked/decommissioned from the DA's active navigation menu, explaining the HTTP No response error. The manual 'Retry Failed Pages' dashboard action was never clicked for this agency."
+      },
+      "starting_urls_and_endpoints": {
+        "portal_url": "https://www.da.gov.ph/",
+        "method": "GET",
+        "mechanism": "WordPress TablePress HTML table parsing (table.tablepress)",
+        "pagination_type": "None (all years embedded in single category listing page)",
+        "document_download_pattern": "Direct PDF URL in TablePress cell <a> tag (e.g. https://www.da.gov.ph/wp-content/uploads/YYYY/MM/...pdf)",
+        "categories": {
+          "Administrative Orders": "https://www.da.gov.ph/laws-and-issuances/administrative-orders/",
+          "Administrative Circulars": "https://www.da.gov.ph/laws-and-issuances/administrative-circulars/",
+          "Department Orders": "https://www.da.gov.ph/laws-and-issuances/department-orders/",
+          "Department Circulars": "https://www.da.gov.ph/laws-and-issuances/department-circulars/",
+          "Memorandum Orders": "https://www.da.gov.ph/laws-and-issuances/memorandum-orders/",
+          "Memorandum Circulars": "https://www.da.gov.ph/laws-and-issuances/memorandum-circulars/",
+          "Joint Administrative Orders": "https://www.da.gov.ph/laws-and-issuances/joint-administrative-orders/",
+          "Joint Department Circulars": "https://www.da.gov.ph/laws-and-issuances/joint-department-circular/",
+          "Joint Memorandum Circulars": "https://www.da.gov.ph/laws-and-issuances/joint-memorandum-circulars/",
+          "Joint Memorandum Orders": "https://www.da.gov.ph/laws-and-issuances/joint-memorandum-order/",
+          "Joint Special Orders": "https://www.da.gov.ph/laws-and-issuances/joint-special-orders/",
+          "Special Orders": "https://www.da.gov.ph/laws-and-issuances/special-orders/",
+          "General Memorandum Orders": "https://www.da.gov.ph/laws-and-issuances/general-memorandum-orders/",
+          "Office Orders": "https://www.da.gov.ph/laws-and-issuances/office-orders/",
+          "Inter-Agency Circulars": "https://www.da.gov.ph/laws-and-issuances/inter-agency-circulars/",
+          "Republic Acts and Proclamations": "https://www.da.gov.ph/laws-and-issuances/republic-acts/"
+        }
+      },
+      "publication_date_semantics": {
+        "semantic_meaning": "Issuance Signing / Promulgation Date",
+        "is_signing_date": true,
+        "is_website_upload_date": false,
+        "source_element": "TablePress column identified dynamically by 'DATE' in header (typically column 2)",
+        "fallback_logic": "Falls back to table_year extracted from the preceding header/accordion element (h1-h6, button, div) if date text is missing",
+        "verification_status": "Verified",
+        "source_reference": "scrapers/da.py L156-L218"
+      }
+    },
+    "DepEd": {
+      "agency_name": "Department of Education",
+      "agency_code": "DepEd",
+      "total_records_in_db": 13708,
+      "run_completed": true,
+      "run_status": "Completed",
+      "timestamps": {
+        "timezone": "Asia/Manila (UTC+08:00)",
+        "extraction_start": {
+          "value": "2026-11-03T10:50:20+08:00",
+          "verification_status": "Verified",
+          "source": "MIN(extraction_timestamp) in issuances table for Department of Education"
+        },
+        "extraction_concluded": {
+          "value": "2026-11-03T11:33:40+08:00",
+          "verification_status": "Verified",
+          "source": "MAX(extraction_timestamp) in issuances table for Department of Education",
+          "notes": "Exact timestamp when the final record was saved into the database."
+        }
+      },
+      "settings": {
+        "selected_categories": {
+          "value": [
+            "DepEd Advisories",
+            "DepEd Memoranda",
+            "DepEd Orders",
+            "Joint Memorandum Circular",
+            "Office Orders",
+            "Implementing Rules and Regulations"
+          ],
+          "count": 6,
+          "verification_status": "Verified",
+          "notes": "All 6 categories executed concurrently using thread workers; 13,708 records successfully saved."
+        },
+        "year_filter": {
+          "value": null,
+          "effective_setting": "All Available Years (Unfiltered)",
+          "verification_status": "Verified",
+          "notes": "No year filter applied. Database records span 1973 through 2026 across 43 distinct years."
+        },
+        "page_limit": {
+          "value": null,
+          "effective_setting": "All Pages (Complete)",
+          "verification_status": "Verified",
+          "notes": "No page limit applied. Hundreds of WordPress archive pages were traversed."
+        },
+        "historical_settings_persisted": false
+      },
+      "errors_and_retries": {
+        "errors_encountered": false,
+        "error_count": 0,
+        "failed_pages_remaining": 0,
+        "retry_count": 0,
+        "verification_status": "Verified",
+        "notes": "Zero failed pages logged in failed_pages."
+      },
+      "starting_urls_and_endpoints": {
+        "portal_url": "https://www.deped.gov.ph/",
+        "method": "GET",
+        "mechanism": "WordPress categorized article listing HTML scraping (<article>, .entry-title a)",
+        "pagination_type": "Progressive numeric path (/category/issuances/<slug>/page/{N}/)",
+        "document_download_pattern": "WordPress post permalink (https://www.deped.gov.ph/YYYY/MM/DD/<slug>/)",
+        "categories": {
+          "DepEd Advisories": "https://www.deped.gov.ph/category/issuances/deped-advisories/",
+          "DepEd Memoranda": "https://www.deped.gov.ph/category/issuances/deped-memoranda/",
+          "DepEd Orders": "https://www.deped.gov.ph/category/issuances/deped-orders/",
+          "Joint Memorandum Circular": "https://www.deped.gov.ph/category/issuances/joint-memorandum-circular/",
+          "Office Orders": "https://www.deped.gov.ph/category/issuances/office-order/",
+          "Implementing Rules and Regulations": "https://www.deped.gov.ph/category/issuances/implementing-rules-and-regulations/"
+        }
+      },
+      "publication_date_semantics": {
+        "semantic_meaning": "Hybrid: Primarily Issuance Signing Date (from title prefix); Website Publication Date as Fallback",
+        "is_signing_date": true,
+        "is_website_upload_date": false,
+        "source_element": "Regex date prefix in title string: ^([A-Za-z]+\\s+\\d{1,2},\\s+\\d{4})",
+        "fallback_logic": "Falls back to <time class='entry-date published'> element text (website post date), then URL slug date path /YYYY/MM/DD/",
+        "verification_status": "Verified",
+        "source_reference": "scrapers/deped.py L371-L397"
+      }
+    },
+    "DOH": {
+      "agency_name": "Department of Health",
+      "agency_code": "DOH",
+      "total_records_in_db": 22906,
+      "run_completed": true,
+      "run_status": "Completed",
+      "timestamps": {
+        "timezone": "Asia/Manila (UTC+08:00)",
+        "extraction_start": {
+          "value": "2026-11-03T11:03:40+08:00",
+          "verification_status": "Verified",
+          "source": "MIN(extraction_timestamp) in issuances table for Department of Health"
+        },
+        "extraction_concluded": {
+          "value": "2026-11-03T11:31:13+08:00",
+          "verification_status": "Verified",
+          "source": "MAX(extraction_timestamp) in issuances table for Department of Health",
+          "notes": "Exact timestamp when the final record was saved into the database."
+        }
+      },
+      "settings": {
+        "selected_categories": {
+          "value": [
+            "Administrative Orders",
+            "Department Circulars",
+            "Memorandum Circulars",
+            "Implementing Rules and Regulations",
+            "Joint Administrative Orders",
+            "Joint Memorandum Circulars",
+            "Joint Circulars",
+            "Executive Orders",
+            "Republic Acts"
+          ],
+          "count": 9,
+          "verification_status": "Verified",
+          "notes": "All 9 categories processed via Inforouter REST API, yielding 22,906 records."
+        },
+        "year_filter": {
+          "value": null,
+          "effective_setting": "All Available Years (Unfiltered)",
+          "verification_status": "Verified",
+          "notes": "No year filter applied. Database records span 1951 through 2026 across 74 distinct years."
+        },
+        "page_limit": {
+          "value": null,
+          "effective_setting": "All Pages (Complete)",
+          "verification_status": "Verified",
+          "notes": "No page limit applied. Department Circulars alone required over 180 API pages at 100 items per page."
+        },
+        "historical_settings_persisted": false
+      },
+      "errors_and_retries": {
+        "errors_encountered": false,
+        "error_count": 0,
+        "failed_pages_remaining": 0,
+        "retry_count": 0,
+        "verification_status": "Verified",
+        "notes": "Zero failed pages logged in failed_pages. Session expiration was automatically handled in-memory by _fetch_page."
+      },
+      "starting_urls_and_endpoints": {
+        "portal_url": "https://doh.gov.ph/",
+        "api_base_url": "https://app.doh.gov.ph:1024",
+        "method": "POST (REST API with JSON responses)",
+        "mechanism": "Inforouter ASP.NET session REST API",
+        "session_initializer_endpoint": "GET https://app.doh.gov.ph:1024/Search",
+        "search_filter_endpoint": "POST https://app.doh.gov.ph:1024/Rest/SearchDocuments",
+        "pagination_endpoints": {
+          "page_1": "POST https://app.doh.gov.ph:1024/Rest/GetFirstPage",
+          "subsequent_pages": "POST https://app.doh.gov.ph:1024/Rest/GetNextPage"
+        },
+        "document_download_pattern": "GET https://app.doh.gov.ph:1024/Rest/GetFile?id={documentId}",
+        "categories": {
+          "Administrative Orders": "KMITS_AISAO",
+          "Department Circulars": "KMITS_AISDC",
+          "Memorandum Circulars": "KMITS_AISMC",
+          "Implementing Rules and Regulations": "KMITS_AISIRR",
+          "Joint Administrative Orders": "KMITS_AISJAO",
+          "Joint Memorandum Circulars": "KMITS_AISJMC",
+          "Joint Circulars": "KMITS_AISJC",
+          "Executive Orders": "KMITS_AISEO",
+          "Republic Acts": "KMITS_AISRA"
+        }
+      },
+      "publication_date_semantics": {
+        "semantic_meaning": "Website / Portal Publication Date (with Fallback to Document Signing Date)",
+        "is_signing_date": false,
+        "is_website_upload_date": true,
+        "source_element": "API JSON property 'publishedDate'",
+        "fallback_logic": "Falls back to 'documentDate' (issuance signing date), then 'dateCreated' (EDMS creation date). Standardized to YYYY-MM-DD; year 2500 typo normalized to 2005.",
+        "verification_status": "Verified",
+        "source_reference": "scrapers/doh.py L218-L255"
+      }
+    }
+  }
+}
