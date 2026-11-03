@@ -22,22 +22,46 @@ All findings herein were obtained through direct read-only inspection of the act
 
 | Parameter | Value | Verification Status | Source Reference |
 |---|---|---|---|
-| **Official Application Name** | Philippine Government Issuance Title Collector | Verified | `README.md` L1; `app.py` L622; `version.py` L8 |
-| **Software Version** | 1.0.0 (Semantic Versioning `v1.0.0`) | Verified | `version.py` L6; `pyproject.toml` L6; `config.py` L68; `/api/version` |
+| **Official Application Name** | Philippine Government Issuance Title Collector | Verified | `README.md` L1; `app.py` L640; `version.py` L8 |
+| **Software Version (at Extraction Time)** | **1.3.1** (Semantic Versioning `v1.3.1`) | Verified | Git commit `1f3a409` (`git describe --tags 1f3a409` -> `v1.3.1`) |
+| **Current Software Version** | **1.4.0** (Semantic Versioning `v1.4.0`) | Verified | `version.py` L6; `pyproject.toml` L6; `config.py` L68; `git describe --tags HEAD` |
+| **Changelog Documentation** | Complete Conventional Commits Changelog | Verified | `CHANGELOG.md` |
 | **Active Git Branch** | `main` | Verified | `git status` (`On branch main`) |
-| **Git Release Tag** | `v1.0.0` | Verified | `git tag -l` |
-| **Latest Git Commit Hash** | `d91fac697d5156f5ab17c891336096d08125c2c2` | Verified | `git rev-parse HEAD` |
-| **Commit Timestamp (Revision Date)** | `2026-11-03 14:21:06 +08:00` | Verified | `git log -1` (`Tue Nov 3 10:04:03 2026 +0800`) |
-| **Commit Subject** | `feat(core): establish semantic versioning v1.0.0, build date metadata, and extraction audit reports` | Verified | `git log -1 --format="%s"` |
+| **Git Release Tags** | `v1.3.1` (Extraction run); `v1.4.0` (Current build) | Verified | `git tag -l` |
+| **Extraction Run Git Commit Hash** | `1f3a409e76ed903232c70ed4918055dd0c629255` | Verified | `git rev-parse 1f3a409` |
+| **Commit Timestamp (Extraction Build)** | `2026-11-03 10:04:03 +08:00` | Verified | `git log -1 1f3a409` (`Tue Nov 3 10:04:03 2026 +0800`) |
+| **Commit Subject (Extraction Build)** | `Chunk bulk issuance inserts to prevent exceeding postgres parameter limit` | Verified | `git log -1 1f3a409 --format="%s"` |
 | **Formal Build Date** | `2026-11-03` | Verified | `version.py` L7; `config.py` L69; `/api/version`; UI footer |
 | **Python Runtime Version** | Python 3.13.3 (64-bit AMD64, MSC v.1943) | Verified | `sys.version` in virtual environment (`venv`) |
 | **Core Frameworks & Libraries** | Flask 3.1.3, SQLAlchemy 2.1.6, Psycopg 3.3.6, Requests 2.34.2, Playwright 1.64.1, Pandas 3.1.0, python-docx 1.2.0, openpyxl 3.1.5, BeautifulSoup4 4.15.0 | Verified | `importlib.metadata.version` in `venv` |
 
-### Key Distinction of Dates
-- **Software Version:** Formally stamped as `v1.0.0` in `version.py`, `config.py`, `pyproject.toml`, and Git tag `v1.0.0`.
-- **Source Revision Date:** `November 3, 2026 at 02:21:06 PM PHT (UTC+08:00)`.
-- **Build Date:** Formally established as `November 3, 2026`, exposed via `/api/version` and the dashboard interface.
-- **Extraction Run Dates:** Conducted on `November 3, 2026` between `09:54:00` and `11:33:40 PHT (UTC+08:00)` (detailed below).
+### Semantic Versioning Progression (Commit History Analysis)
+
+The system's versioning follows the **Semantic Versioning 2.0.0** (`MAJOR.MINOR.PATCH`) standard mapped directly from its **Conventional Commits** history:
+
+| Version | Git Commit | Release Date | Commit Category | Key Architecture / Feature Implemented |
+|---|---|---|---|---|
+| **v0.1.0** | `f72bfe6` | 2026-10-30 | Initial | Initial prototype: multi-agency scrapers (DA, DOH, DepEd, DENR) and Word/Excel exporters |
+| **v0.2.0** | `d6945d9` | 2026-10-30 | `feat` | Compliant paginated DOH listing extraction via Inforouter REST API |
+| **v0.3.0** | `619ba17` | 2026-10-31 | `feat` | Checkpointing engine, resume capability, and DepEd pagination loop resolution |
+| **v0.4.0** | `32043e7` | 2026-10-31 | `feat` | Actionable UI controls: persistent resume buttons and responsive agency selectors |
+| **v0.5.0** | `c1807e8` | 2026-11-01 | `feat` | Environment-aware document persistence supporting Vercel Blob and localhost |
+| **v0.6.0** | `7abe897` | 2026-11-01 | `feat` | Persistent quarantine ledger (`quarantine_logs`) for title integrity and provenance |
+| **v0.7.0** | `18711a7` | 2026-11-01 | `feat` | Parallel category extraction for DepEd with composite multi-category checkpoints |
+| **v0.8.0** | `0282832` | 2026-11-01 | `feat` | Hybrid cloud/local storage routing and dynamic configuration loading |
+| **v1.0.0** | `cf0e425` | 2026-11-01 | **MAJOR** | **Major Architecture Milestone**: Database persistence migrated from SQLite to PostgreSQL with Supabase pooler routing |
+| **v1.1.0** | `b67fdb0` | 2026-11-01 | `feat` | Lightweight in-memory PIN access security gateway with session protection |
+| **v1.2.0** | `6b6b447` | 2026-11-01 | `feat` | Quarantine manual review workflow, triage validator, and resolution documentation |
+| **v1.3.0** | `74f94d1` | 2026-11-01 | `feat` | Legal compliance suite: Terms of Service, Privacy Policy, and login consent verification |
+| **v1.3.1** | `1f3a409` | 2026-11-03 | `fix` | **Extraction Run Build**: Chunked bulk PostgreSQL inserts (1,000 items/batch) to avoid query parameter limit |
+| **v1.4.0** | `HEAD` | 2026-11-03 | `feat` | **Current Release**: Extraction methodology & run history audit reporting suite, `/api/version` endpoints |
+
+### Key Distinction of Dates and Revisions
+- **Software Version at Extraction:** `v1.3.1` (Commit `1f3a409e76ed903232c70ed4918055dd0c629255`). This exact revision executed the extraction runs that collected all delivered records.
+- **Current Software Version:** `v1.4.0` (incorporating the client audit report suite and `/api/version` API).
+- **Source Revision Date (Extraction Build):** `November 3, 2026 at 10:04:03 AM PHT (UTC+08:00)`.
+- **Formal Build Date:** `November 3, 2026`.
+- **Extraction Run Dates:** Conducted on `November 3, 2026` between `09:54:00` and `11:33:40 PHT (UTC+08:00)`.
 
 ---
 

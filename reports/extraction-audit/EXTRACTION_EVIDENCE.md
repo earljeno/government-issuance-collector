@@ -295,8 +295,15 @@ During the audit, certain details requested by the client were identified as **a
      - 47,023 records spanning 1951 to 2026 across 74 distinct years proves that no Year filter was applied.
      - Volume of 18,263 Department Circulars for DOH (>180 pages) proves that no Page Limit was applied.
 
-2. **Software Versioning and Build Date Formalization:**
-   - **Resolution:** The system has been formally versioned as **`v1.0.0`** with a designated build date of **`2026-11-03`**. This metadata is centralized in `version.py`, registered in `pyproject.toml` (PEP 621 standard), exposed via the `/api/version` and `/api/status` endpoints, displayed in the dashboard header and administrative footer, and tagged in Git as `v1.0.0`.
+2. **Software Versioning and Build Date Formalization (Semantic Versioning from Commits):**
+   - **Resolution:** The system's versioning was derived systematically from its Conventional Commits history using Semantic Versioning 2.0.0 rules:
+     - **v1.0.0** (`cf0e425`, 2026-11-01): Major architectural migration from SQLite to PostgreSQL with Supabase transaction pooler routing.
+     - **v1.1.0** (`b67fdb0`, 2026-11-01): In-memory PIN gateway with session protection.
+     - **v1.2.0** (`6b6b447`, 2026-11-01): Quarantine manual review workflow and validation triage.
+     - **v1.3.0** (`74f94d1`, 2026-11-01): Legal compliance suite (Terms of Service, Privacy Policy, consent modal).
+     - **v1.3.1** (`1f3a409`, 2026-11-03): Chunked bulk PostgreSQL inserts (1,000 items/batch). This is the exact revision that executed the official extraction runs.
+     - **v1.4.0** (HEAD, 2026-11-03): Comprehensive extraction methodology and run history audit reporting suite, `version.py`, `pyproject.toml`, and `/api/version` endpoints.
+   - All milestones have been tagged as annotated Git tags (`v0.1.0` through `v1.4.0`) and documented in `CHANGELOG.md`.
 
 3. **Historical In-Memory Transient HTTP Retries:**
    - **Reason:** When `BaseScraper.fetch_url` retries an HTTP request (up to 3 times with exponential backoff), the attempts are logged to standard output (`logger.warning`), but individual retry timestamps are not logged to PostgreSQL unless all 3 attempts fail, at which point the final failure is written to `failed_pages` with `retry_count=0`.
